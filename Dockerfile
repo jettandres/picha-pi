@@ -20,7 +20,6 @@ RUN pacman -Sy --noconfirm \
         zip \
         unzip \
         tar \
-        ca-certificates \
         openssh \
         sudo \
         python \
@@ -32,32 +31,10 @@ RUN pacman -Sy --noconfirm \
         docker-buildx \
         docker-compose \
         lazygit \
-        fakeroot \
-        libffi \
-        libbz2 \
-        readline \
-        sqlite \
-        openssl \
-        zlib \
         tk \
-        make \
-        gcc \
-        binutils \
-        patch \
-        autoconf \
-        automake \
-        file \
-        base-devel \
-        coreutils \
-        grep \
-        gawk \
         which \
-        man-pages \
         less \
         bc \
-        sed \
-        findutils \
-        util-linux \
         && git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 \
         && rm -rf /var/cache/pacman/pkg/*
 
@@ -113,15 +90,17 @@ USER agent
 WORKDIR /home/agent
 
 ENV BASH_ENV="/etc/bash.bashrc"
-COPY --chown=agent:agent <<-EOF /home/agent/.bashrc
-	. "$HOME/.asdf/asdf.sh"
-	export PS1="(agent) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
-	alias ll='ls -la'
-	alias la='ls -A'
-	alias l='ls -CF'
-	export EDITOR=nvim
-	export VISUAL=nvim
+RUN cat > /home/agent/.bashrc <<'EOF'
+. "$HOME/.asdf/asdf.sh"
+export PS1="(agent) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
+alias ll='ls -la'
+alias la='ls -A'
+alias l='ls -CF'
+export EDITOR=nvim
+export VISUAL=nvim
 EOF
+
+RUN chown agent:agent /home/agent/.bashrc
 
 RUN mkdir -p /home/agent/.config/pi \
     && echo '{"permissions": {"allow": ["read", "write", "web-search", "bash"]}}' > /home/agent/.config/pi/permissions.json

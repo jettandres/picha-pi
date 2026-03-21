@@ -10,7 +10,7 @@ up:
 down:
 	docker compose down
 
-shell:
+shell: up
 	docker compose exec dev /bin/bash -l
 
 logs:

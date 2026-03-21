@@ -1,0 +1,22 @@
+name: agentic-env
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentic-env:latest
+    container_name: agentic-env
+    init: true
+    stdin_open: true
+    tty: true
+    privileged: true
+    volumes:
+      - ./data:/home/agent/data
+      - ${HOME}/.ssh:/home/agent/.ssh:ro
+      - ..:/workspace
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    working_dir: /workspace

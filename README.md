@@ -2,6 +2,8 @@
 
 Isolated Docker environment for agentic coding with [Pi](https://github.com/badlogic/pi-mono), LazyVim, and essential dev tools.
 
+**Base**: Arch Linux (rolling release)
+
 ## What's Included
 
 - **Pi** - Minimal terminal AI coding agent by Mario Zechner
@@ -12,53 +14,48 @@ Isolated Docker environment for agentic coding with [Pi](https://github.com/badl
   - Go 1.22
   - Python 3.12
 - Docker + buildx + compose
-- Essential tools: git, ripgrep, fd-find, jq, htop, tree, tmux, etc.
-
-## Build
-
-```bash
-docker build -t agentic-env .
-```
-
-## Run
-
-```bash
-docker run -it --privileged \
-  -v $(pwd):/workspace \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  agentic-env
-```
-
-- `--privileged` - Required for Docker-in-Docker
-- `-v $(pwd):/workspace` - Mount current directory as workspace
-- Add `-v ~/.ssh:/home/agent/.ssh:ro` for git SSH access
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
-| `OPENAI_API_KEY` | OpenAI API key |
-| `GEMINI_API_KEY` | Google Gemini API key |
+- Essential tools: git, ripgrep, fd, jq, htop, tree, tmux, etc.
 
 ## Quick Start
 
-After entering the container:
-
 ```bash
-pi  # Start Pi coding agent
+export ANTHROPIC_API_KEY=sk-ant-...
+make up
+make shell
 ```
 
-```bash
-nvim  # Open LazyVim
-```
+## Makefile Commands
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Build the Docker image |
+| `make up` | Start the container |
+| `make down` | Stop the container |
+| `make shell` | Open shell in container |
+| `make logs` | View container logs |
+| `make clean` | Stop and remove image |
+
+## Volumes
+
+| Path | Description |
+|------|-------------|
+| `./data` | Persistent storage at `/home/agent/data` |
+| `~/.ssh` | SSH keys for git access |
+| `../` | Parent dir mounted as `/workspace` |
+
+## Environment Variables
 
 ```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=...
+export GEMINI_API_KEY=...
+```
+
+## Inside the Container
+
+```bash
+pi       # Start Pi coding agent
+nvim     # Open LazyVim
 lazygit  # Git TUI
+tmux     # Terminal multiplexer
 ```
-
-## Default User
-
-- Username: `agent`
-- Password: `agent`
-- Has sudo and docker group access

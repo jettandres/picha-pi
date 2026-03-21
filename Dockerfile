@@ -1,57 +1,65 @@
-FROM ubuntu:24.04
+FROM archlinux:base
 
-ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Etc/UTC
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    wget \
-    git \
-    git-lfs \
-    vim \
-    nano \
-    tmux \
-    htop \
-    tree \
-    jq \
-    ripgrep \
-    fd-find \
-    zip \
-    unzip \
-    tar \
-    ca-certificates \
-    openssh-client \
-    sudo \
-    locales \
-    tzdata \
-    fonts-hack-ttf \
-    libssl-dev \
-    libffi-dev \
-    libbz2-dev \
-    libreadline-dev \
-    libsqlite3-dev \
-    libncurses-dev \
-    libncurses5 \
-    libncursesw5 \
-    zlib1g-dev \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN locale-gen en_US.UTF-8
-ENV LANG=en_US.UTF-8
-ENV LC_ALL=en_US.UTF-8
-
-RUN curl -LO https://github.com/neovim/neovim/releases/download/v0.10.3/nvim-linux64.tar.gz \
-    && tar -xzf nvim-linux64.tar.gz -C /opt \
-    && ln -sf /opt/nvim-linux64/bin/nvim /usr/local/bin/nvim \
-    && rm nvim-linux64.tar.gz
-
-RUN curl -fsSL https://git.io/lazygit | bash
-
-RUN git clone https://github.com/LazyVim/LazyVim ~/.config/nvim
-
-RUN git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0
+RUN pacman -Sy --noconfirm \
+    && pacman -S --noconfirm \
+        base-devel \
+        curl \
+        wget \
+        git \
+        git-lfs \
+        vim \
+        nano \
+        tmux \
+        htop \
+        tree \
+        jq \
+        ripgrep \
+        fd \
+        zip \
+        unzip \
+        tar \
+        ca-certificates \
+        openssh \
+        sudo \
+        python \
+        python-pip \
+        nodejs \
+        npm \
+        go \
+        docker \
+        docker-buildx \
+        docker-compose \
+        lazygit \
+        fakeroot \
+        libffi \
+        libbz2 \
+        readline \
+        sqlite \
+        openssl \
+        zlib \
+        tk \
+        make \
+        gcc \
+        binutils \
+        patch \
+        autoconf \
+        automake \
+        file \
+        base-devel \
+        coreutils \
+        grep \
+        gawk \
+        which \
+        man-pages \
+        less \
+        bc \
+        sed \
+        findutils \
+        util-linux \
+        && git clone https://github.com/asdf-vm/asdf.git ~/.asdf --branch v0.14.0 \
+        && rm -rf /var/cache/pacman/pkg/*
 
 ENV ASDF_DIR="/root/.asdf"
 ENV PATH="${ASDF_DIR}/bin:${ASDF_DIR}/shims:${PATH}"
@@ -61,7 +69,6 @@ RUN . "$ASDF_DIR/asdf.sh" \
     && asdf plugin add golang \
     && asdf plugin add python
 
-ENV ASDF_NODEJS_LEGACY_FILE_Download=true
 RUN . "$ASDF_DIR/asdf.sh" \
     && asdf install nodejs latest:22 \
     && asdf install golang latest:1.22 \
@@ -70,7 +77,6 @@ RUN . "$ASDF_DIR/asdf.sh" \
     && asdf global golang latest:1.22 \
     && asdf global python latest:3.12
 
-ENV PIP_HOME="/root/.local/share/python-install"
 RUN . "$ASDF_DIR/asdf.sh" \
     && python -m pip install --user --upgrade pip \
     && python -m pip install --user \
@@ -80,8 +86,6 @@ RUN . "$ASDF_DIR/asdf.sh" \
         pytest \
         ipython \
         pipx
-
-
 
 RUN npm install -g @mariozechner/pi-coding-agent
 
@@ -93,19 +97,14 @@ RUN . "$ASDF_DIR/asdf.sh" \
         typescript \
         typescript-language-server
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    docker.io \
-    docker-buildx-plugin \
-    docker-compose-plugin \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN curl -LO https://github.com/neovim/neovim/releases/download/v0.10.3/nvim-linux64.tar.gz \
+    && tar -xzf nvim-linux64.tar.gz -C /opt \
+    && ln -sf /opt/nvim-linux64/bin/nvim /usr/local/bin/nvim \
+    && rm nvim-linux64.tar.gz
 
-RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/google-cloud.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/google-cloud.gpg] https://packages.cloud.google.com/apt cloud-sdk main" > /etc/apt/sources.list.d/google-cloud.list \
-    && apt-get update && apt-get install -y google-cloud-cli \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/LazyVim/LazyVim ~/.config/nvim
 
-RUN useradd -m -s /bin/bash -G sudo,docker agent \
+RUN useradd -m -s /bin/bash -G wheel,docker agent \
     && echo 'agent:agent' | chpasswd \
     && mkdir -p /home/agent \
     && chown -R agent:agent /home/agent
@@ -135,6 +134,5 @@ RUN chmod 777 /workspace
 WORKDIR /workspace
 
 ENV PATH="/root/.local/bin:${PATH}"
-
 
 CMD ["/bin/bash", "-l"]

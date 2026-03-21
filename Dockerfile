@@ -31,6 +31,7 @@ RUN pacman -Sy --noconfirm \
         docker-buildx \
         docker-compose \
         lazygit \
+        fish \
         tk \
         which \
         less \
@@ -79,9 +80,7 @@ RUN curl -LO https://github.com/neovim/neovim/releases/download/v0.10.3/nvim-lin
     && ln -sf /opt/nvim-linux64/bin/nvim /usr/local/bin/nvim \
     && rm nvim-linux64.tar.gz
 
-RUN git clone https://github.com/LazyVim/LazyVim ~/.config/nvim
-
-RUN useradd -m -s /bin/bash -G wheel,docker agent \
+RUN useradd -m -s /usr/bin/fish -G wheel,docker agent \
     && echo 'agent:agent' | chpasswd \
     && mkdir -p /home/agent \
     && chown -R agent:agent /home/agent
@@ -89,21 +88,24 @@ RUN useradd -m -s /bin/bash -G wheel,docker agent \
 USER agent
 WORKDIR /home/agent
 
-ENV BASH_ENV="/etc/bash.bashrc"
-RUN cat > /home/agent/.bashrc <<'EOF'
-. "$HOME/.asdf/asdf.sh"
-export PS1="(agent) \[\033[01;32m\]\u@\h\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]\$ "
-alias ll='ls -la'
-alias la='ls -A'
-alias l='ls -CF'
-export EDITOR=nvim
-export VISUAL=nvim
+RUN mkdir -p /home/agent/.config/fish
+
+RUN fish -c "set -U fish_user_paths $HOME/.asdf/bin $HOME/.local/bin $fish_user_paths"
+
+RUN cat > /home/agent/.config/fish/config.fish <<'EOF'
+. $HOME/.asdf/asdf.sh
+set -gx EDITOR nvim
+set -gx VISUAL nvim
+alias ll 'ls -la'
+alias la 'ls -A'
+alias l 'ls -CF'
 EOF
 
-RUN chown agent:agent /home/agent/.bashrc
+RUN chown -R agent:agent /home/agent/.config
 
 RUN mkdir -p /home/agent/.config/pi \
-    && echo '{"permissions": {"allow": ["read", "write", "web-search", "bash"]}}' > /home/agent/.config/pi/permissions.json
+    && echo '{"permissions": {"allow": ["read", "write", "web-search", "bash"]}}' > /home/agent/.config/pi/permissions.json \
+    && echo '{"provider": "opencode", "opencode_api_url": "https://opencode.ai/api"}' > /home/agent/.config/pi/config.json
 
 USER root
 RUN chmod 700 /home/agent/.config/pi
@@ -114,4 +116,4 @@ WORKDIR /workspace
 
 ENV PATH="/root/.local/bin:${PATH}"
 
-CMD ["/bin/bash", "-l"]
+CMD ["/usr/bin/fish", "-l"]

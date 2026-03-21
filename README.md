@@ -1,13 +1,13 @@
 # Agentic Coding Environment
 
-Isolated Docker environment for agentic coding with [Pi](https://github.com/badlogic/pi-mono), LazyVim, and essential dev tools.
+Isolated Docker environment for agentic coding with [Pi](https://github.com/badlogic/pi-mono), Neovim, and essential dev tools.
 
 **Base**: Arch Linux (rolling release)
 
 ## What's Included
 
 - **Pi** - Minimal terminal AI coding agent by Mario Zechner
-- **LazyVim** - Pre-configured Neovim with plugins
+- Neovim - Bare minimum installation
 - **lazygit** - Terminal git UI
 - **asdf** - Version manager for:
   - Node.js 22
@@ -19,7 +19,11 @@ Isolated Docker environment for agentic coding with [Pi](https://github.com/badl
 ## Quick Start
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+# Edit secrets file with your API keys
+nano secrets/env
+
+# Build and run
+make build
 make up
 make shell
 ```
@@ -43,19 +47,21 @@ make shell
 | `~/.ssh` | SSH keys for git access |
 | `../` | Parent dir mounted as `/workspace` |
 
-## Environment Variables
+## Secrets
+
+API keys are stored in `secrets/env` (gitignored):
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
-export OPENAI_API_KEY=...
-export GEMINI_API_KEY=...
+OPENCODE_API_KEY=your_opencode_api_key_here
+ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=...
 ```
 
 ## Inside the Container
 
 ```bash
 pi       # Start Pi coding agent
-nvim     # Open LazyVim
+nvim     # Open Neovim
 lazygit  # Git TUI
 tmux     # Terminal multiplexer
 ```

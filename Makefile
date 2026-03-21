@@ -11,7 +11,7 @@ down:
 	docker compose down
 
 shell: up
-	docker compose exec dev /bin/bash -l
+	docker compose exec dev /usr/bin/fish -l
 
 logs:
 	docker compose logs -f

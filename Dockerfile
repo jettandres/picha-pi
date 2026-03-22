@@ -115,5 +115,7 @@ RUN chmod 777 /workspace
 WORKDIR /workspace
 
 ENV PATH="/root/.local/bin:${PATH}"
+ENV EDITOR=nvim
+ENV VISUAL=nvim
 
 CMD ["/usr/bin/fish", "-l"]

@@ -14,6 +14,7 @@ services:
     volumes:
       - ./data:/home/agent/data
       - ${HOME}/.ssh:/home/agent/.ssh:ro
+      - ${HOME}/.pi:/root/.pi
       - ..:/workspace
     environment:
       - AWS_REGION=ap-south-1

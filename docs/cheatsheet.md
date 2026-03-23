@@ -28,6 +28,7 @@ Combine multiple approaches, providing tools, listening to events, registering c
 - [Registering Tools](#registering-tools)
 - [Registering Commands](#registering-commands)
 - [Working with Events](#working-with-events)
+- [TUI Component APIs: Low-Level vs High-Level](#tui-component-apis-low-level-vs-high-level)
 - [Executing Shell Commands](#executing-shell-commands)
 - [Common Patterns](#common-patterns)
 - [TypeBox Schema Examples](#typebox-schema-examples)
@@ -238,35 +239,174 @@ pi.on("session-start", () => {
 });
 ```
 
-## Creating TUI Components
+## TUI Component APIs: Low-Level vs High-Level
 
-TUI (Text User Interface) components are interactive UI elements that can display live information. They're created using `ctx.ui.setWidget()` and can be updated dynamically.
+Pi provides two levels of APIs for creating TUI components, each with different complexities and use cases.
 
-### Basic TUI Component Template
+### Low-Level Component API (Full Control)
+
+The low-level API directly implements the Component interface from `@mariozechner/pi-tui`. This gives you complete control over rendering, input handling, and lifecycle management.
+
+#### Component Interface
+
+All components must implement:
+
+```typescript
+interface Component {
+  render(width: number): string[];
+  handleInput?(data: string): void;
+  wantsKeyRelease?: boolean;
+  invalidate(): void;
+}
+```
+
+#### Example: Custom Progress Bar Component
+
+```typescript
+import type { Component } from "@mariozechner/pi-tui";
+import { truncateToWidth } from "@mariozbekner/pi-tui";
+
+class ProgressBar implements Component {
+  private progress: number;
+  private message: string;
+  private cachedWidth?: number;
+  private cachedLines?: string[];
+  
+  constructor(progress: number, message: string) {
+    this.progress = progress;
+    this.message = message;
+  }
+  
+  setProgress(progress: number, message?: string): void {
+    this.progress = progress;
+    if (message) this.message = message;
+    this.invalidate();
+  }
+  
+  render(width: number): string[] {
+    // Return cached result if width hasn't changed
+    if (this.cachedLines && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
+    
+    const barWidth = Math.max(0, width - 10);
+    const filled = Math.floor(barWidth * (this.progress / 100));
+    const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
+    const progressText = `${this.progress}%`.padStart(4);
+    
+    this.cachedLines = [
+      truncateToWidth(this.message, width),
+      `[${bar}]${progressText}`
+    ];
+    this.cachedWidth = width;
+    return this.cachedLines;
+  }
+  
+  invalidate(): void {
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+  }
+}
+```
+
+### High-Level Extension API (Simplified Usage)
+
+The high-level API provided through `ctx.ui.setWidget()` in extensions simplifies component creation by handling much of the boilerplate for you.
+
+#### Basic String Array (Simplest Form)
 
 ```typescript
 pi.on("session-start", async (_event, ctx) => {
-  // Create a simple TUI component
-  ctx.ui.setWidget("my-component", (_tui, theme) => {
+  // Simple static content
+  ctx.ui.setWidget("simple-status", [
+    "Status: Active",
+    "Tasks: 5/10 completed"
+  ]);
+});
+```
+
+#### Function-Based Components (Most Common)
+
+```typescript
+pi.on("session-start", async (_event, ctx) => {
+  ctx.ui.setWidget("dynamic-content", (_tui, theme) => {
+    // Return object with required Component methods
     return {
       render(width: number): string[] {
-        // Return array of strings representing component content
         return [
-          theme.fg("accent", "My Custom TUI Component"),
-          theme.fg("dim", "This is a simple component")
+          theme.fg("accent", "Dynamic Content"),
+          theme.fg("dim", `Terminal width: ${width}`)
         ];
       },
       invalidate() {
-        // Called when component needs to be redrawn
+        // Clear any cached state if needed
       }
     };
   });
 });
 ```
 
-### Using Built-in TUI Components
+#### Integrating Low-Level Components with High-Level API
 
-Pi provides several built-in TUI components that you can use instead of building from scratch:
+You can use your custom low-level components within the high-level extension API:
+
+```typescript
+pi.on("session-start", async (_event, ctx) => {
+  let progress = 0;
+  
+  // Update progress periodically
+  const interval = setInterval(() => {
+    progress = (progress + 10) % 110;
+    ctx.ui.requestRender(); // Trigger re-render
+  }, 1000);
+  
+  ctx.ui.setWidget("progress-bar", (_tui, theme) => {
+    // Create instance of low-level component
+    const progressBar = new ProgressBar(progress, "Processing files...");
+    
+    return {
+      render(width: number): string[] {
+        return progressBar.render(width);
+      },
+      invalidate() {
+        progressBar.invalidate();
+      }
+    };
+  });
+  
+  // Clean up
+  pi.on("session-end", () => {
+    clearInterval(interval);
+  });
+});
+```
+
+### Key Differences and When to Use Each
+
+| Aspect | Low-Level API | High-Level API |
+|--------|---------------|----------------|
+| **Complexity** | More complex, full implementation required | Simpler, abstracted interface |
+| **Control** | Complete control over all aspects | Limited to what extension API provides |
+| **Use Case** | Reusable components, libraries | Quick extension-specific UI |
+| **Performance** | Manual optimization possible | Handled by extension system |
+| **Input Handling** | Full keyboard input support | Limited input handling |
+| **Lifecycle** | Manual management | Managed by extension system |
+
+#### When to Use Low-Level API:
+- Building reusable component libraries
+- Need complex input handling (keyboard navigation, IME support)
+- Creating sophisticated interactive UIs
+- Building components for distribution
+
+#### When to Use High-Level API:
+- Simple status displays in extensions
+- Quick proof-of-concepts
+- Extension-specific UI elements
+- When you want Pi to manage component lifecycle
+
+### Built-in Components with High-Level API
+
+You can also use Pi's built-in components within the high-level API:
 
 ```typescript
 import { Container, Text, DynamicBorder } from "@mariozechner/pi-tui";
@@ -275,14 +415,14 @@ pi.on("session-start", async (_event, ctx) => {
   ctx.ui.setWidget("built-in-example", (_tui, theme) => {
     const container = new Container();
     
-    // Add a border
+    // Add decorative border
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
     
-    // Add text content
-    container.addChild(new Text(theme.fg("accent", "Built-in Components"), 1, 0));
-    container.addChild(new Text(theme.fg("dim", "Using Pi's built-in TUI components"), 1, 0));
+    // Add content
+    container.addChild(new Text(theme.fg("accent", "System Status"), 1, 0));
+    container.addChild(new Text(theme.fg("dim", "All systems operational"), 1, 0));
     
-    // Add another border
+    // Add closing border
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
     
     return {
@@ -297,15 +437,23 @@ pi.on("session-start", async (_event, ctx) => {
 });
 ```
 
-Built-in components include:
-- `Text` - Multi-line text with word wrapping
-- `Container` - Groups child components vertically
-- `Box` - Container with padding and background color
-- `Spacer` - Empty vertical space
-- `DynamicBorder` - Resizable border component
-- `Markdown` - Renders markdown with syntax highlighting
-- `SelectList` - Interactive selection list
-- `SettingsList` - Settings toggle interface
+### Organizing Components in Subdirectories
+
+You can organize your components in subdirectories for better maintainability:
+
+```
+extensions/
+├── my-extension/
+│   ├── index.ts                 # Main extension file
+│   ├── components/              # Custom components
+│   │   ├── ProgressBar.ts      # Low-level component
+│   │   ├── TaskList.ts         # Another low-level component
+│   │   └── index.ts            # Export components
+│   └── tools/
+│       └── task-tools.ts       # LLM tools
+```
+
+This structure allows you to mix both low-level reusable components and high-level extension integration as needed.
 
 ### Advanced TUI Component with State
 

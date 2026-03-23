@@ -65,7 +65,7 @@ RUN . "$ASDF_DIR/asdf.sh" \
         ipython \
         pipx
 
-RUN npm install -g @mariozechner/pi-coding-agent
+RUN npm cache clean --force && npm install -g @mariozechner/pi-coding-agent
 
 RUN . "$ASDF_DIR/asdf.sh" \
     && npm install -g \

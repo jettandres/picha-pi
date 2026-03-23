@@ -1,0 +1,15 @@
+{
+  "name": "vibes-project",
+  "version": "1.0.0",
+  "description": "Agentic coding environment project",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@types/node": "^20.11.24",
+    "typescript": "^5.3.3"
+  }
+}

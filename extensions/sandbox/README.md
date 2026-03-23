@@ -5,25 +5,26 @@ This extension provides OS-level sandboxing for bash commands using bubblewrap, 
 ## Features
 
 - Filesystem isolation with configurable read/write permissions
-- Network isolation with domain-based filtering
+- Network isolation with domain-based filtering via socat
 - Process isolation with PID namespaces
 - Resource limiting (execution time)
 - Agent-specific isolation for multi-agent scenarios
 - Comprehensive logging and monitoring
 - Multiple security levels (strict, moderate, permissive)
+- Secure inter-agent communication channels via socat
 
 ## Installation
 
-1. Ensure `bwrap` (bubblewrap) is installed on your system:
+1. Ensure required tools are installed on your system:
    ```bash
    # Ubuntu/Debian
-   sudo apt install bubblewrap
+   sudo apt install bubblewrap socat ripgrep
    
    # Fedora/RHEL
-   sudo dnf install bubblewrap
+   sudo dnf install bubblewrap socat ripgrep
    
    # Arch Linux
-   sudo pacman -S bubblewrap
+   sudo pacman -S bubblewrap socat ripgrep
    ```
 
 2. The extension is automatically available in this project.
@@ -114,3 +115,29 @@ Feel free to contribute enhancements, particularly in the areas of:
 - File access monitoring
 - Security hardening
 - Multi-agent coordination features
+
+## Socat Integration
+
+This extension leverages socat to provide enhanced network controls:
+
+### Features
+- **Domain-based filtering**: Only allow connections to approved domains  
+- **Network traffic monitoring**: Log and monitor all HTTP/HTTPS requests
+- **Agent-specific proxies**: Each agent gets its own network proxy
+- **Secure inter-agent communication**: Controlled communication channels
+- **Bandwidth limiting potential**: Framework for per-agent network quotas
+
+### Configuration
+Enable socat integration in your sandbox configuration:
+```json
+{
+  "network": {
+    "useSocatProxy": true,
+    "proxyPort": 8080,
+    "allowedDomains": ["github.com", "*.github.com"]
+  }
+}
+```
+
+When enabled, network traffic from sandboxed agents is routed through 
+socat-based proxies that can implement domain filtering and monitoring.

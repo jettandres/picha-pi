@@ -16,7 +16,9 @@
       "api.github.com",
       "raw.githubusercontent.com"
     ],
-    "deniedDomains": []
+    "deniedDomains": [],
+    "useSocatProxy": true,
+    "proxyPort": 8080
   },
   "filesystem": {
     "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg"],

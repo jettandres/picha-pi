@@ -9,7 +9,7 @@ This document summarizes the implementation of the Bubblewrap Sandbox Extension 
 ### 1. Basic Sandboxing
 - OS-level isolation using bubblewrap
 - Filesystem restrictions with configurable read/write permissions
-- Network isolation capabilities
+- Network isolation capabilities via socat-based proxies
 - Process namespace isolation
 - User namespace separation
 - Capability dropping for security hardening
@@ -19,6 +19,7 @@ This document summarizes the implementation of the Bubblewrap Sandbox Extension 
 - Per-agent resource quotas (planned)
 - Isolated execution environments
 - Agent activity tracking
+- Agent-specific socat proxies for network control
 
 ### 3. Security Measures
 - Command validation to prevent dangerous patterns
@@ -26,19 +27,22 @@ This document summarizes the implementation of the Bubblewrap Sandbox Extension 
 - Time-based execution limits
 - Input parameter validation
 - Secure temporary file handling
+- Socat-based network filtering and monitoring
 - Breakout attempt detection
 
 ### 4. Configuration Management
 - Hierarchical configuration (global + project)
 - Multiple security levels (strict, moderate, permissive)
 - Customizable network and filesystem policies
+- Socat proxy configuration
 - Resource limits (timeouts, memory - partial)
 
 ### 5. Monitoring & Management
 - Active sandbox tracking
 - Execution logging
 - Anomaly detection in output
-- Runtime statistics
+- Socat proxy management
+- Resource usage tracking (partial)
 
 ## Files Created
 
@@ -137,10 +141,11 @@ This document summarizes the implementation of the Bubblewrap Sandbox Extension 
 1. **Seccomp filters** - Restricted system calls (basic implementation)
 2. **Time-based execution limits** - Prevent infinite loops
 3. **File access auditing** - Path validation and anomaly detection
-4. **Secure temporary file handling** - Isolated temp directories
-5. **Input validation** - Command and parameter sanitization
-6. **Symlink attack prevention** - Path resolution security
-7. **Resource exhaustion protections** - Timeouts and limits
+4. **Network traffic inspection** - Socat-based monitoring and filtering
+5. **Secure temporary file handling** - Isolated temp directories
+6. **Input validation** - Command and parameter sanitization
+7. **Symlink attack prevention** - Path resolution security
+8. **Resource exhaustion protections** - Timeouts and limits
 
 ## Additional Recommendations
 

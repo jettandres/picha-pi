@@ -9,6 +9,7 @@
   },
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "^0.62.0",
+    "@sinclair/typebox": "^0.32.0",
     "@types/node": "^20.11.24",
     "typescript": "^5.3.3"
   }

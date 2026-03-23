@@ -1,0 +1,39 @@
+{
+  "enabled": true,
+  "securityLevel": "moderate",
+  "maxExecutionTime": 30,
+  "maxMemoryMB": 512,
+  "network": {
+    "allowedDomains": [
+      "github.com",
+      "*.github.com",
+      "npmjs.org",
+      "registry.npmjs.org",
+      "pypi.org",
+      "pypi.python.org"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "denyRead": [
+      "~/.ssh",
+      "~/.aws",
+      "~/.azure",
+      "~/.kube",
+      "~/.docker",
+      "~/.npmrc",
+      "~/.netrc"
+    ],
+    "allowWrite": [
+      ".",
+      "/tmp"
+    ],
+    "denyWrite": [
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "*.creds"
+    ]
+  }
+}

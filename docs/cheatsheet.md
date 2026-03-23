@@ -782,3 +782,10 @@ export default function(pi: ExtensionAPI) {
   });
 }
 ```
+
+## Further Reading
+
+- [Pi Coding Agent Documentation](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) - Official Pi coding agent documentation
+- [TUI Components Guide](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/tui.md) - Detailed guide on TUI components and customization
+- [Model Context Protocol](https://modelcontextprotocol.io) - Specification for tool-based AI agent communication
+- [TypeBox Documentation](https://github.com/sinclairzx81/typebox) - Runtime type construction and validation library

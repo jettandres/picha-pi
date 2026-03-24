@@ -1,15 +1,19 @@
 /**
  * Termux Sandbox Operations
  *
- * Uses PRoot for filesystem and process isolation on Termux.
+ * Uses proot-distro for filesystem and process isolation on Termux.
+ * proot-distro provides preconfigured distributions with PRoot for easy Linux environment setup.
  * PRoot uses ptrace to intercept system calls without requiring root.
  *
  * Works on all Android devices (rooted or not) via Termux.
  * Provides:
- * - Filesystem isolation per agent via isolated root trees
+ * - Full Linux distribution isolation via proot-distro
  * - Network filtering via socat/tinyproxy
  * - Resource limits via timeout and ulimit
  * - Process isolation without elevated privileges
+ *
+ * Installation: apt install proot-distro
+ * Distros available: debian, ubuntu, fedora, archlinux, openkylin, etc.
  */
 
 import { spawn, spawnSync } from "node:child_process";
@@ -42,11 +46,11 @@ interface TermuxActiveSandbox {
 	startTime: number;
 	command: string;
 	config: TermuxSandboxConfig;
-	isolationRoot?: string; // PRoot isolated root filesystem
+	distro?: string; // proot-distro name (debian, ubuntu, etc.)
 }
 
 const activeSandboxes: Map<string, TermuxActiveSandbox> = new Map();
-const sandboxIsolationBase = join(homedir(), ".pi", "sandbox", "termux");
+const sandboxCacheBase = join(homedir(), ".pi", "sandbox", "proot-distro");
 
 /**
  * Detect if running in Termux
@@ -61,11 +65,11 @@ export function isTermux(): boolean {
 }
 
 /**
- * Check if proot is available
+ * Check if proot-distro is available
  */
 export function isPRootAvailable(): boolean {
 	try {
-		const result = spawnSync("which", ["proot"], { stdio: "pipe" });
+		const result = spawnSync("which", ["proot-distro"], { stdio: "pipe" });
 		return result.status === 0;
 	} catch {
 		return false;
@@ -73,16 +77,71 @@ export function isPRootAvailable(): boolean {
 }
 
 /**
- * Get proot version
+ * Get proot-distro version and available distros
  */
-function getPRootVersion(): string | null {
+function getPRootDistroVersion(): string | null {
 	try {
-		const result = spawnSync("proot", ["--version"], { stdio: "pipe", encoding: "utf-8" });
+		const result = spawnSync("proot-distro", ["--version"], { stdio: "pipe", encoding: "utf-8" });
 		if (result.status === 0 && result.stdout) {
 			return result.stdout.trim();
 		}
 	} catch {}
 	return null;
+}
+
+/**
+ * Get list of installed proot-distro distributions
+ */
+function getInstalledDistros(): string[] {
+	try {
+		const result = spawnSync("proot-distro", ["list", "--installed"], { 
+			stdio: "pipe", 
+			encoding: "utf-8" 
+		});
+		if (result.status === 0 && result.stdout) {
+			return result.stdout
+				.trim()
+				.split("\n")
+				.filter(line => line.trim())
+				.map(line => line.split(/\s+/)[0]); // Extract distro name
+		}
+	} catch {}
+	return [];
+}
+
+/**
+ * Ensure a distro is installed
+ * Prefers: alpine (lightweight) > debian (universal) > any available
+ */
+function ensureDistroInstalled(preferredDistro: string = "debian"): string {
+	const installed = getInstalledDistros();
+	
+	// If preferred distro is installed, use it
+	if (installed.includes(preferredDistro)) {
+		return preferredDistro;
+	}
+	
+	// Try to use alpine if available (lightweight, good for sandboxing)
+	if (installed.includes("alpine")) {
+		console.log(`Preferred distro '${preferredDistro}' not found, using 'alpine' (preferred for Termux)`);
+		return "alpine";
+	}
+	
+	// Fall back to debian if available (universal compatibility)
+	if (installed.includes("debian")) {
+		console.log(`Preferred distro '${preferredDistro}' not found, using 'debian' (universal fallback)`);
+		return "debian";
+	}
+	
+	// Otherwise use first available
+	if (installed.length > 0) {
+		console.log(`Preferred distro '${preferredDistro}' not found, using '${installed[0]}'`);
+		return installed[0];
+	}
+	
+	// If none installed, debian is the default
+	console.log(`No distros installed. Using default: ${preferredDistro}`);
+	return preferredDistro;
 }
 
 /**
@@ -98,138 +157,55 @@ function isSocatAvailable(): boolean {
 }
 
 /**
- * Initialize sandbox isolation directory structure
+ * Initialize sandbox cache directory for proot-distro
  */
 function initializeSandboxDirectory(): void {
-	if (!existsSync(sandboxIsolationBase)) {
-		mkdirSync(sandboxIsolationBase, { recursive: true, mode: 0o700 });
+	if (!existsSync(sandboxCacheBase)) {
+		mkdirSync(sandboxCacheBase, { recursive: true, mode: 0o700 });
 	}
 }
 
 /**
- * Create isolated root filesystem for an agent
- * This sets up the directory structure that proot will use as the root
+ * Build proot-distro command with appropriate restrictions
+ * proot-distro manages the entire isolated filesystem, so we use its built-in mechanisms
  */
-function createAgentIsolationRoot(agentId: string): string {
-	const isolationRoot = join(sandboxIsolationBase, "agents", agentId);
-
-	if (existsSync(isolationRoot)) {
-		// Clean up old isolation root
-		rmSync(isolationRoot, { recursive: true, force: true });
-	}
-
-	// Create directory structure
-	mkdirSync(isolationRoot, { recursive: true, mode: 0o700 });
-
-	// Create essential subdirectories
-	const dirs = ["tmp", "home", "workspace", "dev", "proc"];
-	for (const dir of dirs) {
-		mkdirSync(join(isolationRoot, dir), { recursive: true, mode: 0o755 });
-	}
-
-	console.log(`Created PRoot isolation root for agent ${agentId}: ${isolationRoot}`);
-	return isolationRoot;
-}
-
-/**
- * Build proot command with appropriate mounts and restrictions
- */
-function createPRootCommand(
+function createPRootDistroCommand(
 	command: string,
 	config: TermuxSandboxConfig,
 	cwd: string,
-	isolationRoot: string,
 	agentId?: string
-): string {
-	const args: string[] = ["proot"];
-
-	// Set the new root filesystem
-	args.push("-r", isolationRoot);
-
-	// Set working directory inside the isolated root
-	args.push("-w", cwd);
-
-	// Bind mount essential system directories (read-only)
-	args.push("-b", "/system:/system");
-	args.push("-b", "/data/adb:/data/adb"); // For magisk if available
-	args.push("-b", "/dev:/dev");
-	args.push("-b", "/proc:/proc");
-	args.push("-b", "/sys:/sys");
-
-	// Mount Termux binaries
-	if (process.env.PREFIX) {
-		args.push("-b", `${process.env.PREFIX}:${process.env.PREFIX}`);
-	}
-
-	// Mount user's home directory with restrictions based on security level
-	const userHome = homedir();
+): { cmd: string; distro: string } {
+	const distro = ensureDistroInstalled("alpine");
+	
+	// Build the command based on security level
+	let sandboxedCmd = command;
+	
 	switch (config.securityLevel) {
 		case "strict":
-			// Don't mount home - completely isolated
+			// Strict: minimal access, no network
+			// proot-distro isolates filesystem by default
+			sandboxedCmd = `cd ${cwd} && unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy && ${command}`;
 			break;
 		case "moderate":
-			// Mount specific workspace
-			args.push("-b", `${userHome}/.pi/sandbox/workspace:/home`);
+			// Moderate: workspace access, filtered network
+			sandboxedCmd = `cd ${cwd} && ${command}`;
 			break;
 		case "permissive":
-			// Full home access (still virtualized by proot)
-			args.push("-b", `${userHome}:/home`);
+			// Permissive: more open
+			sandboxedCmd = `cd ${cwd} && ${command}`;
 			break;
 	}
 
-	// Mount current working directory
-	if (cwd && cwd !== "/") {
-		args.push("-b", `${cwd}:${cwd}`);
-	}
+	// Use echo + proot-distro login to run the command inside the distro
+	// This pipes the command to the distro's shell via stdin
+	// Properly escape single quotes in the command for the outer shell
+	const escapedCmd = sandboxedCmd.replace(/'/g, "'\\''");
+	const wrappedCmd = `echo '${escapedCmd}' | proot-distro login ${distro}`;
 
-	// Filesystem restrictions from config
-	if (config.filesystem?.denyRead) {
-		for (const path of config.filesystem.denyRead) {
-			// In proot, we prevent mounting sensitive paths
-			// This is implicit - what's not mounted is not accessible
-			console.log(`PRoot: Blocking read access to ${path}`);
-		}
-	}
-
-	// Security hardening
-	switch (config.securityLevel) {
-		case "strict":
-			// No network access
-			args.push("-0"); // Simulate root uid (but still isolated)
-			args.push("-n"); // Use new PID namespace
-			break;
-		case "moderate":
-			// Limited network via proxy
-			args.push("-0");
-			args.push("-n");
-			break;
-		case "permissive":
-			// More open but still virtualized
-			args.push("-0");
-			break;
-	}
-
-	// Set working directory in the command
-	args.push("--");
-	args.push("bash");
-	args.push("-c");
-
-	// Wrap the actual command with resource limits
-	const wrappedCmd = `
-	ulimit -n 1024
-	ulimit -v ${(config.maxMemoryMB || 512) * 1024}
-	${command}
-	`;
-
-	args.push(wrappedCmd);
-
-	return args.map(arg => {
-		// Quote arguments with spaces
-		if (arg.includes(" ") || arg.includes("$")) {
-			return `"${arg}"`;
-		}
-		return arg;
-	}).join(" ");
+	return { 
+		cmd: wrappedCmd,
+		distro
+	};
 }
 
 /**
@@ -308,7 +284,7 @@ function stopSocatProxy(agentId: string): void {
 }
 
 /**
- * Create sandboxed bash operations using PRoot
+ * Create sandboxed bash operations using proot-distro
  */
 export function createTermuxSandboxedBashOps(
 	config: TermuxSandboxConfig,
@@ -329,11 +305,6 @@ export function createTermuxSandboxedBashOps(
 					throw new Error(`Working directory does not exist: ${cwd}`);
 				}
 
-				// Create isolated root for this execution
-				const isolationRoot = agentId
-					? createAgentIsolationRoot(agentId)
-					: createAgentIsolationRoot(`transient-${Date.now()}`);
-
 				// Set up network filtering if configured
 				let proxyStarted = false;
 				let proxyPort = 8080;
@@ -348,9 +319,9 @@ export function createTermuxSandboxedBashOps(
 					proxyStarted = startSocatProxy(agentId, config.network.allowedDomains || [], proxyPort);
 				}
 
-				// Build the proot command
+				// Build the proot-distro command
 				const effectiveTimeout = timeout || config.maxExecutionTime || 30;
-				const prootCmd = createPRootCommand(command, config, cwd, isolationRoot, agentId);
+				const { cmd: prootDistroCmd, distro } = createPRootDistroCommand(command, config, cwd, agentId);
 
 				return new Promise((resolve, reject) => {
 					// Prepare environment
@@ -364,8 +335,8 @@ export function createTermuxSandboxedBashOps(
 						env.https_proxy = `http://localhost:${proxyPort}`;
 					}
 
-					// Execute proot with timeout
-					const timeoutCmd = `timeout ${effectiveTimeout} bash -c '${prootCmd.replace(/'/g, "'\\''")}'`;
+					// Execute proot-distro with timeout wrapper
+					const timeoutCmd = `timeout ${effectiveTimeout} ${prootDistroCmd}`;
 
 					const child = spawn("bash", ["-c", timeoutCmd], {
 						cwd,
@@ -382,7 +353,6 @@ export function createTermuxSandboxedBashOps(
 						startTime: Date.now(),
 						command,
 						config,
-						isolationRoot,
 					});
 
 					let timedOut = false;
@@ -412,9 +382,9 @@ export function createTermuxSandboxedBashOps(
 						outputBuffer += chunk;
 						onData(data);
 
-						// Detect proot issues
-						if (chunk.includes("proot error") || chunk.includes("cannot access")) {
-							console.warn(`Sandbox alert: Potential proot issue in ${sandboxId}`);
+						// Detect proot-distro issues
+						if (chunk.includes("proot-distro error") || chunk.includes("distro not found")) {
+							console.warn(`Sandbox alert: Potential proot-distro issue in ${sandboxId}`);
 						}
 					};
 
@@ -425,11 +395,6 @@ export function createTermuxSandboxedBashOps(
 						activeSandboxes.delete(sandboxId);
 						if (timeoutHandle) clearTimeout(timeoutHandle);
 						if (agentId) stopSocatProxy(agentId);
-
-						// Cleanup isolation root
-						if (existsSync(isolationRoot)) {
-							rmSync(isolationRoot, { recursive: true, force: true });
-						}
 
 						reject(new Error(`Sandbox execution failed: ${err.message}`));
 					});
@@ -459,17 +424,12 @@ export function createTermuxSandboxedBashOps(
 							stopSocatProxy(agentId);
 						}
 
-						// Cleanup isolation root
-						if (existsSync(isolationRoot)) {
-							rmSync(isolationRoot, { recursive: true, force: true });
-						}
-
 						if (signal?.aborted) {
 							reject(new Error("aborted"));
 						} else if (timedOut) {
 							reject(new Error(`timeout:${effectiveTimeout}`));
 						} else {
-							console.log(`Sandbox ${sandboxId} completed with exit code ${code}`);
+							console.log(`Sandbox ${sandboxId} completed with exit code ${code} (distro: ${distro})`);
 							resolve({ exitCode: code });
 						}
 					});
@@ -497,17 +457,10 @@ export function getActiveSandboxes(): TermuxActiveSandbox[] {
 
 /**
  * Clear all active sandboxes
+ * Note: proot-distro manages its own filesystem cleanup, we just clear our tracking
  */
 export function clearActiveSandboxes(): void {
-	// Clean up isolation roots
-	for (const sandbox of activeSandboxes.values()) {
-		if (sandbox.isolationRoot && existsSync(sandbox.isolationRoot)) {
-			try {
-				rmSync(sandbox.isolationRoot, { recursive: true, force: true });
-			} catch (error) {
-				console.warn(`Failed to clean up isolation root ${sandbox.isolationRoot}:`, error);
-			}
-		}
-	}
+	// Clear the sandbox tracking map
+	// proot-distro handles its own filesystem cleanup
 	activeSandboxes.clear();
 }

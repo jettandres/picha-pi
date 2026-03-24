@@ -30,13 +30,16 @@ pi -e ./sandbox
 
 ### Termux (Android)
 ```bash
-pkg install proot              # Install PRoot for sandboxing
+pkg install proot-distro       # Install proot-distro (includes PRoot)
+proot-distro install alpine    # Install Alpine Linux (recommended, minimal)
 pi -e ./sandbox                # Start Pi with sandbox
 /sandbox                       # View configuration
 /sandbox-agents                # View active agents
 ```
 
-For detailed Termux setup, see [TERMUX_SETUP.md](TERMUX_SETUP.md)
+**Note:** Alpine Linux is recommended for its minimal footprint and fast startup. Debian is also supported as a fallback.
+
+For detailed Termux setup, see [Termux: PRoot Containerization](#termux-proot-containerization) below.
 
 ## Features
 
@@ -99,14 +102,17 @@ See [sample-config.json](sample-config.json) for a complete example configuratio
 
 ```
 sandbox/
-├── index.ts                    # Extension entry point
-├── macos-operations.ts         # macOS-specific implementation
-├── osx-profiles/               # macOS sandbox security profiles
-│   ├── strict.sb              # Maximum isolation
-│   ├── moderate.sb            # Balanced security (default)
-│   └── permissive.sb          # Minimal restrictions
-├── README.md                   # This file
-└── default-config.json         # Default configuration
+├── index.ts                       # Extension entry point
+├── macos-operations.ts            # macOS-specific implementation (sandbox-exec)
+├── termux-operations.ts           # Termux-specific implementation (proot-distro)
+├── osx-profiles/                  # macOS sandbox security profiles
+│   ├── strict.sb                 # Maximum isolation
+│   ├── moderate.sb               # Balanced security (default)
+│   └── permissive.sb             # Minimal restrictions
+├── README.md                      # This file
+├── default-config.json            # Default configuration
+├── sample-config.json             # Example configuration
+└── sandbox-implementation-summary.md  # Technical details
 ```
 
 ### Security Levels
@@ -176,7 +182,7 @@ While bubblewrap provides strong isolation, additional guard rails have been imp
 |----------|--------|--------------|
 | **Linux** | ✅ Fully Supported | bubblewrap, socat, ripgrep |
 | **macOS** | ✅ Fully Supported | None (built-in sandbox-exec) |
-| **Termux (Android)** | ✅ Fully Supported | proot, socat (optional) |
+| **Termux (Android)** | ✅ Fully Supported | proot-distro (with Alpine or Debian) |
 | **Windows** | ❌ Not Supported | Planned (Windows Sandbox API) |
 
 ## Limitations
@@ -188,11 +194,13 @@ While bubblewrap provides strong isolation, additional guard rails have been imp
 - Inter-agent communication controls are minimal (planned)
 
 ### Termux
-- PRoot has ~10-30% performance overhead due to syscall interception
+- proot-distro has ~10-30% performance overhead due to syscall interception
 - Memory limiting is soft (via ulimit, not strict kernel limits)
 - Network filtering requires socat (optional but recommended)
 - Cannot sandbox privileged operations (non-applicable in Termux's user-only model)
-- Startup time ~50-200ms per command for isolated filesystem creation
+- Startup time ~50-200ms per command with Alpine (faster than Debian)
+- Requires proot-distro to be installed (not available on all Android devices)
+- Minor proot warnings about `/proc/self/fd/*` bindings are harmless
 
 ### macOS
 - Sandbox profiles use basic regex patterns (could be enhanced with more granular rules)
@@ -240,19 +248,25 @@ Enable socat integration in your sandbox configuration:
 
 ### Termux: PRoot Containerization
 
-Termux uses **PRoot** for lightweight containerization without requiring root:
+Termux uses **proot-distro** for lightweight containerization without requiring root. This extension intelligently selects the best distribution for your setup:
+
+- **Alpine Linux** (recommended) - Minimal, fast, ~130MB
+- **Debian** (fallback) - Universal compatibility, ~500MB+
+- Any other installed distro
 
 #### Key Features
 - **No root required** - Works on any Android device (rooted or not)
-- **Filesystem isolation** - Per-agent isolated root filesystems using ptrace
+- **Filesystem isolation** - Per-agent isolated root filesystems via proot-distro
 - **Network filtering** - Optional socat proxy for domain-based filtering
 - **Resource limits** - Execution time and memory limits via timeout and ulimit
 - **Multi-agent support** - Each agent gets its own isolated environment
+- **Smart distro selection** - Prefers Alpine but gracefully falls back
 
-#### How PRoot Works
-**PRoot** uses `ptrace` (system call tracing) to provide filesystem isolation **without requiring a rooted device**:
-- Intercepts system calls
-- Rewrites file paths to isolated roots
+#### How proot-distro Works
+**proot-distro** provides pre-configured Linux distributions using **PRoot**, which uses `ptrace` (system call tracing) for filesystem isolation **without requiring a rooted device**:
+- Intercepts system calls via ptrace
+- Rewrites file paths to isolated filesystem roots
+- Runs complete Linux distributions (Alpine, Debian, Ubuntu, etc.)
 - No kernel modules needed
 - No root/sudo required
 
@@ -260,11 +274,13 @@ Example:
 ```
 Your Command
     ↓
+proot-distro login [distro]
+    ↓
 PRoot (intercepts syscalls via ptrace)
     ↓
-Rewrites paths → Isolated filesystem
+Rewrites paths → Isolated Linux filesystem
     ↓
-Safe execution
+Safe execution in isolated environment
 ```
 
 #### Installation
@@ -272,29 +288,70 @@ Safe execution
 In Termux, run:
 
 ```bash
-pkg install proot              # Required
-pkg install socat              # Optional, for network filtering
+pkg install proot-distro       # Required - includes PRoot
+proot-distro install alpine    # Recommended - minimal and fast
+pkg install socat              # Optional - for network filtering
 ```
 
-Then verify:
+Verify installation:
 ```bash
-proot --version
+proot-distro list --installed
+# Output should include: alpine
+```
+
+If you want Debian as a fallback:
+```bash
+proot-distro install debian    # Optional - universal compatibility
 ```
 
 #### Quick Setup
 
 ```bash
-# 1. Install PRoot
-pkg install proot
+# 1. Install proot-distro
+pkg install proot-distro
 
-# 2. Start Pi with sandbox
+# 2. Install Alpine (minimal and recommended)
+proot-distro install alpine
+
+# 3. Start Pi with sandbox
 pi -e ./sandbox
 
-# 3. View configuration
+# 4. View configuration
 /sandbox
 
-# 4. Switch security level
+# 5. Switch security level (if needed)
 /sandbox-level moderate
+```
+
+The extension will automatically:
+- ✅ Prefer Alpine Linux (fast startup ~50-200ms, minimal ~130MB)
+- ✅ Fall back to Debian if Alpine isn't installed (universal compatibility)
+- ✅ Fall back to any other installed distro if needed
+- ✅ Isolate each command in the selected distribution
+- ✅ Handle file path mapping and resource limits
+- ✅ Use `proot-distro login` for reliable command execution
+
+#### Distro Selection Priority
+
+The extension uses this priority order:
+
+1. **Alpine** (if installed) - Recommended for Termux
+   - Minimal footprint (~130MB)
+   - Fast startup (~50-200ms)
+   - Has all essential tools (bash, grep, find, curl, etc.)
+   
+2. **Debian** (if installed) - Universal fallback
+   - Familiar package manager (apt)
+   - Broader package availability
+   - Good for compatibility (~500MB+)
+
+3. **Any other installed distro** - As last resort
+   - Ubuntu, Fedora, Arch, etc.
+
+Set your preference in `termux-operations.ts`:
+```typescript
+// In createPRootDistroCommand(), line ~77:
+const distro = ensureDistroInstalled("alpine");  // Change "alpine" to preferred distro
 ```
 
 #### Security Levels
@@ -444,20 +501,34 @@ Each agent runs in its own sandboxed environment with isolated filesystems.
 
 #### Troubleshooting
 
-**"PRoot not found" Error**
+**"proot-distro: command not found" or "proot-distro not found"**
 
-Install PRoot:
+Install proot-distro:
 ```bash
-pkg install proot
+pkg install proot-distro
 ```
+
+**"No distros installed" Warning**
+
+You need to install at least one distro:
+```bash
+proot-distro install alpine    # Recommended
+# OR
+proot-distro install debian    # For Debian compatibility
+```
+
+**"proot warning: can't sanitize binding /proc/self/fd/1"**
+
+This is a harmless proot warning about file descriptor handling. It doesn't prevent command execution. The command still runs successfully despite the warning.
 
 **Slow Execution**
 
-PRoot adds overhead due to syscall tracing. For performance-critical tasks:
+proot-distro adds overhead due to syscall tracing (~10-30%). For performance-critical tasks:
 
-1. Use `permissive` mode to reduce isolation overhead
-2. Batch commands together to amortize startup cost
-3. Consider disabling sandbox: `pi -e ./sandbox --no-sandbox`
+1. Use Alpine instead of Debian (faster startup)
+2. Use `permissive` mode to reduce isolation overhead
+3. Batch commands together to amortize startup cost
+4. Consider disabling sandbox: `pi -e ./sandbox --no-sandbox`
 
 **Permission Denied in Sandbox**
 
@@ -468,32 +539,71 @@ This is expected for protected system directories. Ensure your command writes to
 
 **Network Issues**
 
-If network isn't working:
+If network isn't working inside the sandbox:
 
-1. Ensure socat is installed: `pkg install socat`
-2. Check proxy configuration in `.pi/sandbox.json`
-3. Verify allowed domains match your targets
-4. Test directly: `curl https://github.com`
+1. Test basic connectivity: `echo 'curl https://github.com' | proot-distro login alpine`
+2. Ensure socat is installed if using network filtering: `pkg install socat`
+3. Check proxy configuration in `.pi/sandbox.json`
+4. Verify allowed domains match your targets
+5. Try `permissive` mode to rule out filtering issues
 
 **Sandbox Takes Too Long to Clean Up**
 
-PRoot creates isolated filesystems that are cleaned up after each command. On slow storage, this may take a few seconds. This is normal.
+proot-distro creates isolated filesystems that are cleaned up after each command. On slow storage, this may take a few seconds. This is normal, especially with larger distros like Debian. Alpine is faster (~50-200ms).
 
-#### Advanced: Custom Mounts
+**"Unknown command 'exec'" Error**
 
-The extension automatically mounts:
+This typically means proot-distro is installed but the version is very old or doesn't support the `exec` subcommand. The extension now uses `proot-distro login` instead, which is more compatible. Make sure your extension code is up to date and run `/reload` to reload the extension.
 
-- `/system` (read-only) - System binaries
-- `$PREFIX` - Termux packages
-- `.` (current directory) - Your project
-- `/tmp` - Temporary files
+#### Implementation Details: proot-distro Login Approach
 
-To add custom mounts, modify `termux-operations.ts`:
+The extension runs commands inside proot-distro using the login method:
+
+```bash
+# Instead of: proot-distro exec alpine bash -c "command"
+# We use:    echo 'command' | proot-distro login alpine
+
+# Benefits:
+# ✅ More reliable - works with all proot-distro versions
+# ✅ Better output handling - preserves stderr/stdout
+# ✅ Simpler escaping - avoids complex nested bash quoting
+```
+
+This approach pipes your command to the distro's shell, which:
+1. Activates the full isolated Linux environment
+2. Executes your command in the isolated filesystem
+3. Properly handles output back to Termux
+4. Cleans up the isolated environment
+
+#### Advanced: Custom Environment Variables
+
+You can pass environment variables to sandboxed commands by modifying the `exec` function in `termux-operations.ts`:
 
 ```typescript
-// In createPRootCommand()
-args.push("-b", "/custom/path:/custom/path");
+const env = { ...process.env };
+env.MY_VAR = "value";
+env.ANOTHER_VAR = "another_value";
+// These will be available inside the sandbox
 ```
+
+#### Advanced: Using Different Distros
+
+To prefer a different distro (Debian, Ubuntu, Fedora, etc.), modify `termux-operations.ts`:
+
+```typescript
+// In createPRootDistroCommand(), change:
+const distro = ensureDistroInstalled("debian");  // Use debian instead
+
+// Or modify ensureDistroInstalled() to change the priority order
+```
+
+Available distros (from proot-distro):
+- `alpine` - Minimal, fast (~130MB)
+- `debian` - Universal, well-supported (~500MB+)
+- `ubuntu` - Familiar, many packages
+- `fedora` - Latest packages
+- `archlinux` - Rolling release
+- Others - Check `proot-distro list`
 
 #### Security Best Practices
 

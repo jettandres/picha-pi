@@ -652,15 +652,23 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			let sandboxedBash;
-			if (PLATFORM === "darwin") {
+			if (PLATFORM === "linux" && !isTermux()) {
+				// Standard Linux with bubblewrap (priority #1)
 				sandboxedBash = createBashTool(localCwd, {
-					operations: createMacOSSandboxedBashOps(currentConfig, __dirname),
+					operations: createSandboxedBashOps(currentConfig),
 				});
 			} else if (isTermux()) {
+				// Termux with proot-distro (priority #2)
 				sandboxedBash = createBashTool(localCwd, {
 					operations: createTermuxSandboxedBashOps(currentConfig),
 				});
+			} else if (PLATFORM === "darwin") {
+				// macOS with sandbox-exec (priority #3)
+				sandboxedBash = createBashTool(localCwd, {
+					operations: createMacOSSandboxedBashOps(currentConfig, __dirname),
+				});
 			} else {
+				// Fallback: unsupported platform
 				sandboxedBash = createBashTool(localCwd, {
 					operations: createSandboxedBashOps(currentConfig),
 				});
@@ -694,15 +702,23 @@ export default function (pi: ExtensionAPI) {
 			const effectiveCwd = params.cwd || localCwd;
 			
 			let agentSandboxedBash;
-			if (PLATFORM === "darwin") {
+			if (PLATFORM === "linux" && !isTermux()) {
+				// Standard Linux with bubblewrap (priority #1)
 				agentSandboxedBash = createBashTool(effectiveCwd, {
-					operations: createMacOSSandboxedBashOps(agentConfig, __dirname, params.agentId),
+					operations: createSandboxedBashOps(agentConfig, params.agentId),
 				});
 			} else if (isTermux()) {
+				// Termux with proot-distro (priority #2)
 				agentSandboxedBash = createBashTool(effectiveCwd, {
 					operations: createTermuxSandboxedBashOps(agentConfig, params.agentId),
 				});
+			} else if (PLATFORM === "darwin") {
+				// macOS with sandbox-exec (priority #3)
+				agentSandboxedBash = createBashTool(effectiveCwd, {
+					operations: createMacOSSandboxedBashOps(agentConfig, __dirname, params.agentId),
+				});
 			} else {
+				// Fallback: unsupported platform
 				agentSandboxedBash = createBashTool(effectiveCwd, {
 					operations: createSandboxedBashOps(agentConfig, params.agentId),
 				});
@@ -737,11 +753,17 @@ export default function (pi: ExtensionAPI) {
 	pi.on("user_bash", () => {
 		if (!sandboxEnabled) return;
 		
-		if (PLATFORM === "darwin") {
-			return { operations: createMacOSSandboxedBashOps(currentConfig, __dirname) };
+		if (PLATFORM === "linux" && !isTermux()) {
+			// Standard Linux with bubblewrap (priority #1)
+			return { operations: createSandboxedBashOps(currentConfig) };
 		} else if (isTermux()) {
+			// Termux with proot-distro (priority #2)
 			return { operations: createTermuxSandboxedBashOps(currentConfig) };
+		} else if (PLATFORM === "darwin") {
+			// macOS with sandbox-exec (priority #3)
+			return { operations: createMacOSSandboxedBashOps(currentConfig, __dirname) };
 		} else {
+			// Fallback
 			return { operations: createSandboxedBashOps(currentConfig) };
 		}
 	});
@@ -763,26 +785,9 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// Platform-specific initialization
-		if (PLATFORM === "darwin") {
-			// macOS initialization
-			if (!isSandboxExecAvailable()) {
-				sandboxEnabled = false;
-				ctx.ui.notify("sandbox-exec not found. Sandbox disabled. (macOS requirement)", "error");
-				return;
-			}
-		} else if (isTermux()) {
-			// Termux initialization (can be on Linux or Android)
-			if (!isPRootAvailable()) {
-				sandboxEnabled = false;
-				ctx.ui.notify(
-					"PRoot not found. Install it with: pkg install proot\nSandbox disabled.",
-					"error"
-				);
-				return;
-			}
-		} else if (PLATFORM === "linux") {
-			// Linux initialization (non-Termux)
+		// Platform-specific initialization (priority: Linux > Termux > macOS)
+		if (PLATFORM === "linux" && !isTermux()) {
+			// Linux with bubblewrap (priority #1)
 			try {
 				const which = spawn("which", ["bwrap"]);
 				await new Promise((resolve, reject) => {
@@ -796,6 +801,23 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("bwrap (bubblewrap) not found. Sandbox disabled.", "error");
 				return;
 			}
+		} else if (isTermux()) {
+			// Termux with proot-distro (priority #2)
+			if (!isPRootAvailable()) {
+				sandboxEnabled = false;
+				ctx.ui.notify(
+					"proot-distro not found. Install it with: pkg install proot-distro\nSandbox disabled.",
+					"error"
+				);
+				return;
+			}
+		} else if (PLATFORM === "darwin") {
+			// macOS with sandbox-exec (priority #3)
+			if (!isSandboxExecAvailable()) {
+				sandboxEnabled = false;
+				ctx.ui.notify("sandbox-exec not found. Sandbox disabled. (macOS requirement)", "error");
+				return;
+			}
 		} else {
 			sandboxEnabled = false;
 			ctx.ui.notify(`Sandbox not supported on ${PLATFORM}`, "warning");
@@ -807,9 +829,13 @@ export default function (pi: ExtensionAPI) {
 		const networkCount = currentConfig.network?.allowedDomains?.length ?? 0;
 		const writeCount = currentConfig.filesystem?.allowWrite?.length ?? 0;
 		const securityLevel = currentConfig.securityLevel || "moderate";
-		let platformLabel = PLATFORM === "darwin" ? "macOS" : "Linux";
-		if (isTermux()) {
-			platformLabel = "Termux";
+		let platformLabel = "Unknown";
+		if (PLATFORM === "linux" && !isTermux()) {
+			platformLabel = "Linux (bubblewrap)";
+		} else if (isTermux()) {
+			platformLabel = "Termux (proot-distro)";
+		} else if (PLATFORM === "darwin") {
+			platformLabel = "macOS (sandbox-exec)";
 		}
 		ctx.ui.setStatus(
 			"sandbox",
@@ -819,12 +845,8 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async () => {
-		// Clean up platform-specific resources
-		if (PLATFORM === "darwin") {
-			clearActiveSandboxes();
-		} else if (isTermux()) {
-			clearActiveTermuxSandboxes();
-		} else {
+		// Clean up platform-specific resources (priority: Linux > Termux > macOS)
+		if (PLATFORM === "linux" && !isTermux()) {
 			// Linux cleanup
 			activeSandboxes.clear();
 			
@@ -833,6 +855,12 @@ export default function (pi: ExtensionAPI) {
 				stopSocatProxy(agentId);
 			}
 			activeSocatProxies.clear();
+		} else if (isTermux()) {
+			// Termux cleanup
+			clearActiveTermuxSandboxes();
+		} else if (PLATFORM === "darwin") {
+			// macOS cleanup
+			clearActiveSandboxes();
 		}
 	});
 
@@ -869,11 +897,12 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			let activeSandboxList: Array<{ id: string; pid: number; startTime: number }> = [];
 			
-			if (PLATFORM === "darwin") {
-				activeSandboxList = getActiveSandboxes().map(s => ({
-					id: s.id,
-					pid: s.pid,
-					startTime: s.startTime
+			// Priority: Linux > Termux > macOS
+			if (PLATFORM === "linux" && !isTermux()) {
+				activeSandboxList = Array.from(activeSandboxes.entries()).map(([id, sandbox]) => ({
+					id,
+					pid: sandbox.pid,
+					startTime: sandbox.startTime
 				}));
 			} else if (isTermux()) {
 				activeSandboxList = getActiveTermuxSandboxes().map(s => ({
@@ -881,11 +910,11 @@ export default function (pi: ExtensionAPI) {
 					pid: s.pid,
 					startTime: s.startTime
 				}));
-			} else {
-				activeSandboxList = Array.from(activeSandboxes.entries()).map(([id, sandbox]) => ({
-					id,
-					pid: sandbox.pid,
-					startTime: sandbox.startTime
+			} else if (PLATFORM === "darwin") {
+				activeSandboxList = getActiveSandboxes().map(s => ({
+					id: s.id,
+					pid: s.pid,
+					startTime: s.startTime
 				}));
 			}
 			

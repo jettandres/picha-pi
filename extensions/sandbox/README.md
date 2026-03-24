@@ -1,21 +1,18 @@
 # Sandbox Extension for Pi Coding Agent
 
-This extension provides OS-level sandboxing for bash commands with platform-specific implementations:
-- **Linux**: Uses bubblewrap with socat for network filtering
-- **macOS**: Uses Apple's native `sandbox-exec` for isolation
+This extension provides OS-level sandboxing for bash commands with platform-specific implementations, prioritized in this order:
+
+1. **Linux (bubblewrap)** - Uses bubblewrap with socat for network filtering
+2. **Termux (proot-distro)** - Uses PRoot containerization with Linux distributions
+3. **macOS (sandbox-exec)** - Uses Apple's native `sandbox-exec` for isolation
 
 Designed for secure multi-agent orchestration.
 
 ## Quick Start
 
-### macOS (No installation needed!)
-```bash
-pi -e ./sandbox
-/sandbox          # View configuration
-/sandbox-agents   # View active agents
-```
+> **Priority order:** Linux (bubblewrap) → Termux (proot-distro) → macOS (sandbox-exec)
 
-### Linux
+### Linux (Priority #1)
 Install required tools first:
 ```bash
 sudo apt install bubblewrap socat ripgrep  # Ubuntu/Debian
@@ -26,9 +23,11 @@ sudo apt install bubblewrap socat ripgrep  # Ubuntu/Debian
 Then start Pi:
 ```bash
 pi -e ./sandbox
+/sandbox          # View configuration
+/sandbox-agents   # View active agents
 ```
 
-### Termux (Android)
+### Termux (Priority #2)
 ```bash
 pkg install proot-distro       # Install proot-distro (includes PRoot)
 proot-distro install alpine    # Install Alpine Linux (recommended, minimal)
@@ -41,17 +40,26 @@ pi -e ./sandbox                # Start Pi with sandbox
 
 For detailed Termux setup, see [Termux: PRoot Containerization](#termux-proot-containerization) below.
 
+### macOS (Priority #3)
+No installation needed! Apple's `sandbox-exec` is built-in:
+```bash
+pi -e ./sandbox
+/sandbox          # View configuration
+/sandbox-agents   # View active agents
+```
+
 ## Features
 
 - Filesystem isolation with configurable read/write permissions
 - Network isolation with domain-based filtering
-- Process isolation with namespaces (Linux) or sandbox profiles (macOS)
+- Process isolation with namespaces (Linux) or sandbox profiles (macOS/Termux)
 - Resource limiting (execution time)
 - Agent-specific isolation for multi-agent scenarios
 - Comprehensive logging and monitoring
 - Multiple security levels (strict, moderate, permissive)
 - Secure inter-agent communication channels
-- Cross-platform support (Linux + macOS)
+- Cross-platform support (Linux, Termux, macOS)
+- **Smart platform detection** with clear priority order (Linux → Termux → macOS)
 
 ## Installation
 
@@ -176,14 +184,35 @@ While bubblewrap provides strong isolation, additional guard rails have been imp
 6. Capability dropping
 7. Secure temporary file handling
 
+## Platform Detection Priority
+
+The extension automatically detects your platform and uses this priority order:
+
+1. **Linux (standard)** ← Highest priority (uses bubblewrap)
+   - Detected: `process.platform === "linux"` AND NOT Termux
+   - Tools required: bubblewrap, socat, ripgrep
+
+2. **Termux (Android via proot-distro)** ← Medium priority
+   - Detected: Termux environment variables or `/data/data/com.termux` path
+   - Tools required: proot-distro, Alpine or Debian distro
+
+3. **macOS** ← Lowest priority (uses sandbox-exec)
+   - Detected: `process.platform === "darwin"`
+   - Tools required: None (built-in)
+
+This priority order ensures that:
+- Standard Linux systems use the most efficient bubblewrap implementation
+- Termux environments are properly detected even when running on Linux
+- macOS is used only if no other platform is detected
+
 ## Platform Support
 
-| Platform | Status | Requirements |
-|----------|--------|--------------|
-| **Linux** | ✅ Fully Supported | bubblewrap, socat, ripgrep |
-| **macOS** | ✅ Fully Supported | None (built-in sandbox-exec) |
-| **Termux (Android)** | ✅ Fully Supported | proot-distro (with Alpine or Debian) |
-| **Windows** | ❌ Not Supported | Planned (Windows Sandbox API) |
+| Platform | Status | Requirements | Detection |
+|----------|--------|--------------|-----------|
+| **Linux** | ✅ Fully Supported | bubblewrap, socat, ripgrep | `process.platform === "linux"` AND NOT Termux |
+| **Termux (Android)** | ✅ Fully Supported | proot-distro (Alpine or Debian) | Termux env vars or `/data/data/com.termux` |
+| **macOS** | ✅ Fully Supported | None (built-in sandbox-exec) | `process.platform === "darwin"` |
+| **Windows** | ❌ Not Supported | Planned (Windows Sandbox API) | N/A |
 
 ## Limitations
 

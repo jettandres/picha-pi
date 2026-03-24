@@ -91,12 +91,11 @@ See [sample-config.json](sample-config.json) for a complete example configuratio
 sandbox/
 ├── index.ts                    # Extension entry point
 ├── macos-operations.ts         # macOS-specific implementation
-├── profiles/                   # Sandbox security profiles
+├── osx-profiles/               # macOS sandbox security profiles
 │   ├── strict.sb              # Maximum isolation
 │   ├── moderate.sb            # Balanced security (default)
 │   └── permissive.sb          # Minimal restrictions
 ├── README.md                   # This file
-├── MACOS_QUICKSTART.md        # macOS getting started guide
 └── default-config.json         # Default configuration
 ```
 
@@ -226,7 +225,7 @@ Enable socat integration in your sandbox configuration:
 macOS uses Apple's native `sandbox-exec` with declarative security profiles:
 
 #### Sandbox Profiles
-The extension includes three security profiles (in `profiles/` directory):
+The extension includes three security profiles (in `osx-profiles/` directory):
 
 - **`strict.sb`** - Maximum isolation
   - No network access

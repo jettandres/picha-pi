@@ -86,7 +86,7 @@ function validateCommand(command: string): { valid: boolean; error?: string } {
 }
 
 function loadSandboxProfile(profileDir: string, securityLevel: string): string {
-	const profilePath = join(profileDir, "profiles", `${securityLevel}.sb`);
+	const profilePath = join(profileDir, "osx-profiles", `${securityLevel}.sb`);
 	
 	if (!existsSync(profilePath)) {
 		throw new Error(`Sandbox profile not found: ${profilePath}`);

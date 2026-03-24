@@ -123,7 +123,21 @@ pi -e ./sandbox --no-sandbox
 ## Commands
 
 - `/sandbox` - Show current sandbox configuration
-- `/sandbox-agents` - Show active sandboxed agents (future feature)
+- `/sandbox-level [level]` - Switch security level (strict, moderate, permissive)
+  - Without argument: Interactive selection menu
+  - With argument: Direct switch (e.g., `/sandbox-level strict`)
+- `/sandbox-agents` - Show active sandboxed agents
+
+### Examples
+
+```
+/sandbox                    # View current config
+/sandbox-level              # Interactive level selector
+/sandbox-level strict       # Switch directly to strict
+/sandbox-level moderate     # Switch directly to moderate
+/sandbox-level permissive   # Switch directly to permissive
+/sandbox-agents             # List active agents
+```
 
 ## Multi-Agent Orchestration
 

@@ -870,4 +870,67 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
+
+	pi.registerCommand("sandbox-level", {
+		description: "Switch sandbox security level (strict, moderate, permissive)",
+		handler: async (args, ctx) => {
+			if (!sandboxEnabled) {
+				ctx.ui.notify("Sandbox is disabled", "info");
+				return;
+			}
+
+			const securityLevels = ["strict", "moderate", "permissive"];
+			const currentLevel = currentConfig.securityLevel || "moderate";
+
+			// Helper function to update status footer
+			const updateStatusFooter = (level: string) => {
+				const networkCount = currentConfig.network?.allowedDomains?.length ?? 0;
+				const writeCount = currentConfig.filesystem?.allowWrite?.length ?? 0;
+				const platformLabel = PLATFORM === "darwin" ? "macOS" : "Linux";
+				ctx.ui.setStatus(
+					"sandbox",
+					ctx.ui.theme.fg("accent", `🔒 Sandbox (${platformLabel}/${level}): ${networkCount} domains, ${writeCount} write paths`),
+				);
+			};
+
+			// If level provided as argument, switch to it
+			if (args && args.trim()) {
+				const newLevel = args.trim().toLowerCase();
+				if (!securityLevels.includes(newLevel)) {
+					ctx.ui.notify(`Invalid security level: ${newLevel}. Choose from: ${securityLevels.join(", ")}`, "error");
+					return;
+				}
+
+				if (newLevel === currentLevel) {
+					ctx.ui.notify(`Already in ${newLevel} mode`, "info");
+					return;
+				}
+
+				currentConfig.securityLevel = newLevel as "strict" | "moderate" | "permissive";
+				updateStatusFooter(newLevel);
+				ctx.ui.notify(`✅ Switched to ${newLevel} security level`, "success");
+				return;
+			}
+
+			// Otherwise, show interactive selection with labels
+			const options = securityLevels.map(level => 
+				level === currentLevel ? `${level} (current)` : level
+			);
+			
+			const choice = await ctx.ui.select(
+				"Select security level:",
+				options
+			);
+
+			if (choice) {
+				// Extract the actual level name (remove " (current)" suffix if present)
+				const selectedLevel = choice.split(" ")[0] as "strict" | "moderate" | "permissive";
+				if (selectedLevel !== currentLevel) {
+					currentConfig.securityLevel = selectedLevel;
+					updateStatusFooter(selectedLevel);
+					ctx.ui.notify(`✅ Switched to ${selectedLevel} security level`, "success");
+				}
+			}
+		},
+	});
 }

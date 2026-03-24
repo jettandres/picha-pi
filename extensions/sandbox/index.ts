@@ -63,6 +63,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { type BashOperations, createBashTool, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { createMacOSSandboxedBashOps, isSandboxExecAvailable, getActiveSandboxes, clearActiveSandboxes } from "./macos-operations";
+import { createTermuxSandboxedBashOps, isTermux, isPRootAvailable, getActiveSandboxes as getActiveTermuxSandboxes, clearActiveSandboxes as clearActiveTermuxSandboxes } from "./termux-operations";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -655,6 +656,10 @@ export default function (pi: ExtensionAPI) {
 				sandboxedBash = createBashTool(localCwd, {
 					operations: createMacOSSandboxedBashOps(currentConfig, __dirname),
 				});
+			} else if (isTermux()) {
+				sandboxedBash = createBashTool(localCwd, {
+					operations: createTermuxSandboxedBashOps(currentConfig),
+				});
 			} else {
 				sandboxedBash = createBashTool(localCwd, {
 					operations: createSandboxedBashOps(currentConfig),
@@ -693,6 +698,10 @@ export default function (pi: ExtensionAPI) {
 				agentSandboxedBash = createBashTool(effectiveCwd, {
 					operations: createMacOSSandboxedBashOps(agentConfig, __dirname, params.agentId),
 				});
+			} else if (isTermux()) {
+				agentSandboxedBash = createBashTool(effectiveCwd, {
+					operations: createTermuxSandboxedBashOps(agentConfig, params.agentId),
+				});
 			} else {
 				agentSandboxedBash = createBashTool(effectiveCwd, {
 					operations: createSandboxedBashOps(agentConfig, params.agentId),
@@ -730,6 +739,8 @@ export default function (pi: ExtensionAPI) {
 		
 		if (PLATFORM === "darwin") {
 			return { operations: createMacOSSandboxedBashOps(currentConfig, __dirname) };
+		} else if (isTermux()) {
+			return { operations: createTermuxSandboxedBashOps(currentConfig) };
 		} else {
 			return { operations: createSandboxedBashOps(currentConfig) };
 		}
@@ -760,8 +771,18 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("sandbox-exec not found. Sandbox disabled. (macOS requirement)", "error");
 				return;
 			}
+		} else if (isTermux()) {
+			// Termux initialization (can be on Linux or Android)
+			if (!isPRootAvailable()) {
+				sandboxEnabled = false;
+				ctx.ui.notify(
+					"PRoot not found. Install it with: pkg install proot\nSandbox disabled.",
+					"error"
+				);
+				return;
+			}
 		} else if (PLATFORM === "linux") {
-			// Linux initialization
+			// Linux initialization (non-Termux)
 			try {
 				const which = spawn("which", ["bwrap"]);
 				await new Promise((resolve, reject) => {
@@ -786,7 +807,10 @@ export default function (pi: ExtensionAPI) {
 		const networkCount = currentConfig.network?.allowedDomains?.length ?? 0;
 		const writeCount = currentConfig.filesystem?.allowWrite?.length ?? 0;
 		const securityLevel = currentConfig.securityLevel || "moderate";
-		const platformLabel = PLATFORM === "darwin" ? "macOS" : "Linux";
+		let platformLabel = PLATFORM === "darwin" ? "macOS" : "Linux";
+		if (isTermux()) {
+			platformLabel = "Termux";
+		}
 		ctx.ui.setStatus(
 			"sandbox",
 			ctx.ui.theme.fg("accent", `🔒 Sandbox (${platformLabel}/${securityLevel}): ${networkCount} domains, ${writeCount} write paths`),
@@ -798,6 +822,8 @@ export default function (pi: ExtensionAPI) {
 		// Clean up platform-specific resources
 		if (PLATFORM === "darwin") {
 			clearActiveSandboxes();
+		} else if (isTermux()) {
+			clearActiveTermuxSandboxes();
 		} else {
 			// Linux cleanup
 			activeSandboxes.clear();
@@ -845,6 +871,12 @@ export default function (pi: ExtensionAPI) {
 			
 			if (PLATFORM === "darwin") {
 				activeSandboxList = getActiveSandboxes().map(s => ({
+					id: s.id,
+					pid: s.pid,
+					startTime: s.startTime
+				}));
+			} else if (isTermux()) {
+				activeSandboxList = getActiveTermuxSandboxes().map(s => ({
 					id: s.id,
 					pid: s.pid,
 					startTime: s.startTime

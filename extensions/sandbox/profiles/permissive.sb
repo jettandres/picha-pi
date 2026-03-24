@@ -1,0 +1,39 @@
+;; Permissive Sandbox Profile for Pi Coding Agent
+;; Minimal restrictions - mostly for audit and monitoring
+
+(version 1)
+(deny default)
+
+;; Allow most process operations
+(allow process-fork)
+(allow process-exec)
+(allow process-exit)
+(allow process-exec-interpreter)
+(allow sysctl-read)
+(allow sysctl-write)
+(allow system-fsctl)
+
+;; Allow broad file access
+(allow file-read*)
+(allow file-write*)
+(allow file-execute*)
+(allow file-chown)
+(allow file-chmod)
+(allow file-chflags)
+(allow file-fchmod)
+(allow file-fsctl)
+(allow file-fsctl-extended)
+
+;; Allow environment access
+(allow process-info*)
+
+;; Allow signal sending
+(allow signal)
+
+;; Allow network access (all)
+(allow network*)
+
+;; Only deny truly dangerous operations
+(deny file-write* (regex #"^/System/Library/"))
+(deny file-write* (regex #"^/usr/libexec/"))
+(deny process-exec (literal "/usr/libexec/begin_session"))

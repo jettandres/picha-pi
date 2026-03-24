@@ -62,9 +62,11 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { type BashOperations, createBashTool, getAgentDir } from "@mariozechner/pi-coding-agent";
+import { createMacOSSandboxedBashOps, isSandboxExecAvailable, getActiveSandboxes, clearActiveSandboxes } from "./macos-operations";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+const PLATFORM = process.platform;
 
 // Types for our sandbox configuration
 interface SandboxNetworkConfig {
@@ -648,9 +650,16 @@ export default function (pi: ExtensionAPI) {
 				return localBash.execute(id, params, signal, onUpdate);
 			}
 
-			const sandboxedBash = createBashTool(localCwd, {
-				operations: createSandboxedBashOps(currentConfig),
-			});
+			let sandboxedBash;
+			if (PLATFORM === "darwin") {
+				sandboxedBash = createBashTool(localCwd, {
+					operations: createMacOSSandboxedBashOps(currentConfig, __dirname),
+				});
+			} else {
+				sandboxedBash = createBashTool(localCwd, {
+					operations: createSandboxedBashOps(currentConfig),
+				});
+			}
 			return sandboxedBash.execute(id, params, signal, onUpdate);
 		},
 	});
@@ -679,9 +688,16 @@ export default function (pi: ExtensionAPI) {
 			const agentConfig = createAgentSandboxConfig(currentConfig, params.agentId);
 			const effectiveCwd = params.cwd || localCwd;
 			
-			const agentSandboxedBash = createBashTool(effectiveCwd, {
-				operations: createSandboxedBashOps(agentConfig, params.agentId),
-			});
+			let agentSandboxedBash;
+			if (PLATFORM === "darwin") {
+				agentSandboxedBash = createBashTool(effectiveCwd, {
+					operations: createMacOSSandboxedBashOps(agentConfig, __dirname, params.agentId),
+				});
+			} else {
+				agentSandboxedBash = createBashTool(effectiveCwd, {
+					operations: createSandboxedBashOps(agentConfig, params.agentId),
+				});
+			}
 
 			return agentSandboxedBash.execute(_id, { 
 				command: params.command, 
@@ -711,7 +727,12 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("user_bash", () => {
 		if (!sandboxEnabled) return;
-		return { operations: createSandboxedBashOps(currentConfig) };
+		
+		if (PLATFORM === "darwin") {
+			return { operations: createMacOSSandboxedBashOps(currentConfig, __dirname) };
+		} else {
+			return { operations: createSandboxedBashOps(currentConfig) };
+		}
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -731,18 +752,32 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
-		// Verify bubblewrap is available
-		try {
-			const which = spawn("which", ["bwrap"]);
-			await new Promise((resolve, reject) => {
-				which.on("close", (code) => {
-					if (code !== 0) reject(new Error("bwrap not found"));
-					else resolve(null);
+		// Platform-specific initialization
+		if (PLATFORM === "darwin") {
+			// macOS initialization
+			if (!isSandboxExecAvailable()) {
+				sandboxEnabled = false;
+				ctx.ui.notify("sandbox-exec not found. Sandbox disabled. (macOS requirement)", "error");
+				return;
+			}
+		} else if (PLATFORM === "linux") {
+			// Linux initialization
+			try {
+				const which = spawn("which", ["bwrap"]);
+				await new Promise((resolve, reject) => {
+					which.on("close", (code) => {
+						if (code !== 0) reject(new Error("bwrap not found"));
+						else resolve(null);
+					});
 				});
-			});
-		} catch {
+			} catch {
+				sandboxEnabled = false;
+				ctx.ui.notify("bwrap (bubblewrap) not found. Sandbox disabled.", "error");
+				return;
+			}
+		} else {
 			sandboxEnabled = false;
-			ctx.ui.notify("bwrap (bubblewrap) not found. Sandbox disabled.", "error");
+			ctx.ui.notify(`Sandbox not supported on ${PLATFORM}`, "warning");
 			return;
 		}
 
@@ -751,22 +786,28 @@ export default function (pi: ExtensionAPI) {
 		const networkCount = currentConfig.network?.allowedDomains?.length ?? 0;
 		const writeCount = currentConfig.filesystem?.allowWrite?.length ?? 0;
 		const securityLevel = currentConfig.securityLevel || "moderate";
+		const platformLabel = PLATFORM === "darwin" ? "macOS" : "Linux";
 		ctx.ui.setStatus(
 			"sandbox",
-			ctx.ui.theme.fg("accent", `🔒 Sandbox (${securityLevel}): ${networkCount} domains, ${writeCount} write paths`),
+			ctx.ui.theme.fg("accent", `🔒 Sandbox (${platformLabel}/${securityLevel}): ${networkCount} domains, ${writeCount} write paths`),
 		);
-		ctx.ui.notify(`Sandbox initialized (${securityLevel} security)`, "info");
+		ctx.ui.notify(`Sandbox initialized on ${platformLabel} (${securityLevel} security)`, "info");
 	});
 
 	pi.on("session_shutdown", async () => {
-		// Clean up any active sandboxes
-		activeSandboxes.clear();
-		
-		// Clean up any active socat proxies
-		for (const agentId of activeSocatProxies.keys()) {
-			stopSocatProxy(agentId);
+		// Clean up platform-specific resources
+		if (PLATFORM === "darwin") {
+			clearActiveSandboxes();
+		} else {
+			// Linux cleanup
+			activeSandboxes.clear();
+			
+			// Clean up any active socat proxies
+			for (const agentId of activeSocatProxies.keys()) {
+				stopSocatProxy(agentId);
+			}
+			activeSocatProxies.clear();
 		}
-		activeSocatProxies.clear();
 	});
 
 	pi.registerCommand("sandbox", {
@@ -800,16 +841,31 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("sandbox-agents", {
 		description: "Show active sandboxed agents",
 		handler: async (_args, ctx) => {
-			if (activeSandboxes.size === 0) {
+			let activeSandboxList: Array<{ id: string; pid: number; startTime: number }> = [];
+			
+			if (PLATFORM === "darwin") {
+				activeSandboxList = getActiveSandboxes().map(s => ({
+					id: s.id,
+					pid: s.pid,
+					startTime: s.startTime
+				}));
+			} else {
+				activeSandboxList = Array.from(activeSandboxes.entries()).map(([id, sandbox]) => ({
+					id,
+					pid: sandbox.pid,
+					startTime: sandbox.startTime
+				}));
+			}
+			
+			if (activeSandboxList.length === 0) {
 				ctx.ui.notify("No active sandboxed agents", "info");
 				return;
 			}
 
 			const lines = ["Active Sandboxed Agents:"];
-			// Convert map to array for iteration
-			Array.from(activeSandboxes.entries()).forEach(([id, sandbox]) => {
+			activeSandboxList.forEach(sandbox => {
 				const uptime = Math.floor((Date.now() - sandbox.startTime) / 1000);
-				lines.push(`  ${id}: PID ${sandbox.pid}, uptime ${uptime}s`);
+				lines.push(`  ${sandbox.id}: PID ${sandbox.pid}, uptime ${uptime}s`);
 			});
 			ctx.ui.notify(lines.join("\n"), "info");
 		},

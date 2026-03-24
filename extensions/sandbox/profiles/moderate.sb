@@ -1,0 +1,71 @@
+;; Moderate Sandbox Profile for Pi Coding Agent
+;; Balanced isolation with selective network and file access
+
+(version 1)
+(deny default)
+
+;; Allow process operations
+(allow process-fork)
+(allow process-exec)
+(allow sysctl-read)
+(allow system-fsctl)
+
+;; Basic file operations - read system directories
+(allow file-read-metadata)
+(allow file-read* (literal "/"))
+(allow file-read* (regex #"^/usr/lib/"))
+(allow file-read* (regex #"^/usr/bin/"))
+(allow file-read* (regex #"^/usr/local/bin/"))
+(allow file-read* (regex #"^/bin/"))
+(allow file-read* (regex #"^/sbin/"))
+(allow file-read* (regex #"^/Library/Frameworks/"))
+(allow file-read* (regex #"^/System/"))
+
+;; Allow home directory read (but not hidden dirs by default)
+(allow file-read* (regex #"^/Users/[^/.]+/[^.]+"))
+(allow file-read* (regex #"^/Users/[^/.]+/Desktop"))
+(allow file-read* (regex #"^/Users/[^/.]+/Documents"))
+(allow file-read* (regex #"^/Users/[^/.]+/Downloads"))
+
+;; Allow reading environment
+(allow process-info-pidinfo)
+(allow process-info-setcontrol)
+
+;; Allow /tmp and /var/tmp
+(allow file-read* (regex #"^/tmp/"))
+(allow file-write* (regex #"^/tmp/"))
+(allow file-read* (regex #"^/var/tmp/"))
+(allow file-write* (regex #"^/var/tmp/"))
+
+;; Allow dynamic directory access (working directory will be added)
+;; Allow signal sending
+(allow signal (target self))
+
+;; Network access - domain filtering via HTTP_PROXY environment variable
+;; Allow DNS queries
+(allow network-outbound (literal ""))
+(allow network-outbound (remote ip-literal))
+(allow network-outbound (remote iso-domain))
+
+;; Deny high-risk network operations
+(deny network-outbound (remote ip-literal "255.255.255.255"))
+
+;; Deny access to sensitive locations
+(deny file-read* (regex #"^/etc/passwd"))
+(deny file-read* (regex #"^/etc/shadow"))
+(deny file-read* (regex #"^/root/"))
+(deny file-read* (glob "/Users/*/.*"))
+(deny file-read* (regex #"^.*/.ssh/"))
+(deny file-read* (regex #"^.*/.aws/"))
+(deny file-read* (regex #"^.*/.gnupg/"))
+
+;; Deny file write to sensitive locations
+(deny file-write* (regex #"^/etc/"))
+(deny file-write* (regex #"^/System/"))
+(deny file-write* (regex #"^/Library/"))
+(deny file-write* (glob "/Users/*/.*"))
+(deny file-write* (regex #"^.*/.ssh/"))
+(deny file-write* (regex #"^.*/.aws/"))
+(deny file-write* (regex #"^.*/.env.*"))
+(deny file-write* (regex #"^.*\.pem$"))
+(deny file-write* (regex #"^.*\.key$"))

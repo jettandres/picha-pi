@@ -10,12 +10,14 @@ You can use `cd` within a single command (`bash -c "cd src && npm test"`), but n
 
 Most development tools work normally:
 - **Package managers:** npm, yarn, pnpm, pip, cargo, gem
-- **Runtimes:** node, python, go, rust, ruby
+- **Runtimes:** node, python, go, rust, ruby (via asdf or system)
 - **VCS:** git (clone, commit, push, pull, branch, merge, rebase)
 - **Build:** make, gcc, go build, cargo build
 - **File ops:** ls, find, cat, grep, cp, mv, rm, mkdir, touch
 - **Text:** sed, awk, jq, nano, vim
 - **Other:** curl, wget, tar, zip, docker exec, diff, patch, time
+
+**ASDF Support:** All tools installed via asdf work automatically (node, python, ruby, go, rust, etc.)
 
 ## What's Blocked
 
@@ -29,7 +31,11 @@ For security:
 
 ## How It Works
 
-- **Filesystem:** Project directory is read-write; `/usr`, `/bin`, `/etc` are read-only; no access to home directory
+- **Filesystem:** 
+  - Project directory is read-write
+  - `/usr`, `/bin`, `/etc` are read-only (system binaries/config)
+  - **Home directory is completely isolated** - only `.asdf` and `.nix-profile` are mounted (read-only) for tools
+  - `~/.ssh`, `~/.aws`, and other sensitive directories are NOT accessible
 - **Tool caches:** Go, Rust, Python cache to `/tmp` (ephemeral, not persisted)
 - **Isolation:** Linux bubblewrap provides namespace isolation + capability restrictions
 - **Network:** Enabled by default, configurable via security level

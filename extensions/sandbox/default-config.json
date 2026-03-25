@@ -23,6 +23,7 @@
   "filesystem": {
     "denyRead": ["~/.ssh", "~/.aws", "~/.gnupg"],
     "allowWrite": [".", "/tmp"],
-    "denyWrite": [".env", ".env.*", "*.pem", "*.key"]
+    "denyWrite": [".env", ".env.*", "*.pem", "*.key"],
+    "safeHomeSubdirs": [".asdf", ".nix-profile"]
   }
 }

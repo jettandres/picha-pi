@@ -81,6 +81,7 @@ interface SandboxFilesystemConfig {
 	denyRead?: string[];
 	allowWrite?: string[];
 	denyWrite?: string[];
+	safeHomeSubdirs?: string[];  // Whitelist of home subdirectories to mount (read-only)
 }
 
 interface SandboxConfig {
@@ -420,6 +421,29 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	// Mount /etc for system configuration (read-only)
 	args.push("--ro-bind-try", "/etc", "/etc");
 	
+	// Mount ONLY specific safe subdirectories from home
+	// SECURITY: The entire home directory is NOT exposed - only these specific whitelisted paths
+	const homeDir = process.env.HOME;
+	const safeHomeSubdirs = config.filesystem?.safeHomeSubdirs || [".asdf", ".nix-profile"];
+	
+	if (homeDir) {
+		for (const subdir of safeHomeSubdirs) {
+			// Prevent directory traversal attacks
+			if (subdir.includes("..") || subdir.includes("/") || subdir.startsWith("/")) {
+				continue;  // Skip unsafe patterns
+			}
+			
+			const fullPath = join(homeDir, subdir);
+			if (existsSync(fullPath)) {
+				// Extra validation: ensure path is actually under home
+				const realPath = require("node:fs").realpathSync(fullPath);
+				if (realPath.startsWith(homeDir + "/") || realPath === homeDir) {
+					args.push("--ro-bind-try", fullPath, fullPath);
+				}
+			}
+		}
+	}
+	
 	// Essential pseudo-filesystems
 	args.push("--proc", "/proc");
 	args.push("--dev", "/dev");
@@ -528,6 +552,80 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 					env.XDG_CONFIG_HOME = "/tmp/xdg-config"; // Generic config directory
 					env.CARGO_HOME = "/tmp/cargo";           // Rust/Cargo cache
 					env.PIP_CACHE_DIR = "/tmp/pip-cache";   // Python pip cache
+					
+					// Ensure ASDF_DATA_DIR is set for asdf tools to work properly
+					if (!env.ASDF_DATA_DIR) {
+						env.ASDF_DATA_DIR = join(process.env.HOME || "/root", ".asdf");
+					}
+					
+					// Add asdf installs to PATH to make tools directly accessible
+					// This bypasses asdf shims and directly uses the installed tools
+					const homeAsdf = join(process.env.HOME || "/root", ".asdf", "installs");
+					const asdfInstallPaths: string[] = [];
+					try {
+						const asdfDirs = require("node:fs").readdirSync(homeAsdf);
+						for (const toolDir of asdfDirs) {
+							const toolPath = join(homeAsdf, toolDir);
+							const versions = require("node:fs").readdirSync(toolPath);
+							// Add the latest version (last one alphabetically) bin directory
+							if (versions.length > 0) {
+								const latestVersion = versions.sort().pop();
+								const versionPath = join(toolPath, latestVersion);
+								
+								// Special case: golang has structure like golang/1.25.1/go/bin
+								if (toolDir === "golang") {
+									const goBin = join(versionPath, "go", "bin");
+									if (require("node:fs").existsSync(goBin)) {
+										asdfInstallPaths.push(goBin);
+										continue;
+									}
+								}
+								
+								// Look for subdirectory with bin first (e.g., rust/bin, ruby/bin)
+								try {
+									const subdirs = require("node:fs").readdirSync(versionPath);
+									let foundSubBin = false;
+									for (const subdir of subdirs) {
+										if (subdir === "bin" || subdir === "packages" || subdir === "downloads") {
+											continue;  // Skip non-binary directories
+										}
+										const subBin = join(versionPath, subdir, "bin");
+										if (require("node:fs").existsSync(subBin)) {
+											asdfInstallPaths.push(subBin);
+											foundSubBin = true;
+											break;
+										}
+									}
+									if (foundSubBin) continue;
+								} catch (e) {
+									// Ignore if can't read subdirs
+								}
+								
+								// Fall back to direct bin directory
+								const directBin = join(versionPath, "bin");
+								if (require("node:fs").existsSync(directBin)) {
+									asdfInstallPaths.push(directBin);
+								}
+							}
+						}
+					} catch (e) {
+						// Silently ignore if asdf not found
+					}
+					
+					// Remove asdf shims from PATH and replace with direct tool paths
+					// This ensures tools work without needing the asdf command
+					const currentPath = env.PATH || "";
+					const pathWithoutShims = currentPath
+						.split(":")
+						.filter(p => !p.includes(".asdf/shims") && !p.includes(".asdf/plugins/"))
+						.join(":");
+					
+					// Prepend asdf install paths to PATH
+					if (asdfInstallPaths.length > 0) {
+						env.PATH = asdfInstallPaths.join(":") + ":" + pathWithoutShims;
+					} else {
+						env.PATH = pathWithoutShims;
+					}
 					
 					// If we have a socat proxy, set HTTP proxy environment variables
 					if (proxyStarted && agentId) {

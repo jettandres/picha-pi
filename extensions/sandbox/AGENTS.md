@@ -36,6 +36,10 @@ For security:
   - `/usr`, `/bin`, `/etc` are read-only (system binaries/config)
   - **Home directory is completely isolated** - only `.asdf` and `.nix-profile` are mounted (read-only) for tools
   - `~/.ssh`, `~/.aws`, and other sensitive directories are NOT accessible
+- **Environment Variables:**
+  - API keys and secrets are **automatically filtered out** (AWS_*, *_API_KEY, *_TOKEN, *_SECRET, etc.)
+  - Safe variables (PATH, LANG, HOME, etc.) are passed through
+  - Prevents accidental credential leakage
 - **Tool caches:** Go, Rust, Python cache to `/tmp` (ephemeral, not persisted)
 - **Isolation:** Linux bubblewrap provides namespace isolation + capability restrictions
 - **Network:** Enabled by default, configurable via security level

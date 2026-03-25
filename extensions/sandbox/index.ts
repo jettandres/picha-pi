@@ -543,7 +543,43 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 
 				return new Promise((resolve, reject) => {
 					// Prepare environment variables for the sandboxed process
-					const env = { ...process.env };
+					// Filter out sensitive variables to prevent credential leakage
+					const env: Record<string, string> = {};
+					const sensitivePatterns = [
+						/^AWS_(ACCESS_KEY|SECRET_ACCESS_KEY|SESSION_TOKEN|CREDENTIALS)/,  // AWS credentials only, not region
+						/^OPENAI_/,
+						/^ANTHROPIC_/,
+						/^GEMINI_/,
+						/^KIMI_/,
+						/^OPENROUTER_/,
+						/_API_KEY$/,
+						/_SECRET$/,
+						/_TOKEN$/,
+						/_PASSWORD$/,
+						/_CREDENTIAL/,
+						/^.*_KEY$/,
+					];
+					
+					// Whitelist of safe AWS variables
+					const safeAwsVars = ["AWS_REGION", "AWS_PROFILE", "AWS_DEFAULT_REGION"];
+					
+					// Copy safe environment variables
+					for (const [key, value] of Object.entries(process.env)) {
+						if (!value) continue;
+						
+						// Check if this is an explicitly safe AWS variable
+						if (safeAwsVars.includes(key)) {
+							env[key] = value;
+							continue;
+						}
+						
+						// Check if this variable matches any sensitive pattern
+						const isSensitive = sensitivePatterns.some(pattern => pattern.test(key));
+						
+						if (!isSensitive) {
+							env[key] = value;
+						}
+					}
 					
 					// Redirect tool caches to /tmp (not home directory, for security)
 					// This keeps the sandbox isolated while allowing tools to function

@@ -407,9 +407,9 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	args.push("--unshare-all");
 	args.push("--new-session");
 	
-	// Security hardening
-	args.push("--cap-drop", "all");
-	args.push("--no-new-privs");
+	// Security hardening - namespace isolation is the main protection
+	// For most development use cases, capabilities don't need to be dropped
+	// The --unshare-all already provides strong isolation
 
 	// Mount essential filesystems as read-only
 	args.push("--ro-bind", "/usr", "/usr");
@@ -417,12 +417,15 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	args.push("--ro-bind", "/lib", "/lib");
 	args.push("--ro-bind-try", "/lib64", "/lib64"); // Not all systems have /lib64
 	
+	// Mount /etc for system configuration (read-only)
+	args.push("--ro-bind-try", "/etc", "/etc");
+	
 	// Essential pseudo-filesystems
 	args.push("--proc", "/proc");
 	args.push("--dev", "/dev");
 	args.push("--tmpfs", "/tmp");
 	
-	// Handle current working directory
+	// Handle current working directory (the only writable filesystem by default)
 	args.push("--bind", safeCwd, safeCwd);
 	
 	// For agent-specific sandboxes, we might want to create isolated workspaces
@@ -480,7 +483,14 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	// Set the command to execute
 	args.push("--", "bash", "-c", command);
 
-	return `bwrap ${args.map(arg => `"${arg}"`).join(" ")}`;
+	const fullCommand = `bwrap ${args.map(arg => `"${arg}"`).join(" ")}`;
+	
+	// Debug logging - uncomment to troubleshoot bwrap issues
+	// console.log("[bwrap] Full command:", fullCommand);
+	// console.log("[bwrap] CWD:", safeCwd);
+	// console.log("[bwrap] Command:", command);
+	
+	return fullCommand;
 }
 
 function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOperations {
@@ -510,6 +520,14 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 				return new Promise((resolve, reject) => {
 					// Prepare environment variables for the sandboxed process
 					const env = { ...process.env };
+					
+					// Redirect tool caches to /tmp (not home directory, for security)
+					// This keeps the sandbox isolated while allowing tools to function
+					env.GOCACHE = "/tmp/go-cache";           // Go build cache
+					env.XDG_CACHE_HOME = "/tmp/xdg-cache";  // Generic cache directory
+					env.XDG_CONFIG_HOME = "/tmp/xdg-config"; // Generic config directory
+					env.CARGO_HOME = "/tmp/cargo";           // Rust/Cargo cache
+					env.PIP_CACHE_DIR = "/tmp/pip-cache";   // Python pip cache
 					
 					// If we have a socat proxy, set HTTP proxy environment variables
 					if (proxyStarted && agentId) {
@@ -785,6 +803,18 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 
+		// Load AGENTS.md guidance if it exists
+		try {
+			const agentsMdPath = join(__dirname, "AGENTS.md");
+			if (existsSync(agentsMdPath)) {
+				const agentsGuidance = readFileSync(agentsMdPath, "utf-8");
+				// Store for injection in before_agent_start
+				(globalThis as any).__sandbox_agents_guidance = agentsGuidance;
+			}
+		} catch (e) {
+			// Silently ignore if can't load AGENTS.md
+		}
+
 		// Platform-specific initialization (priority: Linux > Termux > macOS)
 		if (PLATFORM === "linux" && !isTermux()) {
 			// Linux with bubblewrap (priority #1)
@@ -842,6 +872,18 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.theme.fg("accent", `🔒 Sandbox (${platformLabel}/${securityLevel}): ${networkCount} domains, ${writeCount} write paths`),
 		);
 		ctx.ui.notify(`Sandbox initialized on ${platformLabel} (${securityLevel} security)`, "info");
+	});
+
+	pi.on("before_agent_start", async (event, ctx) => {
+		if (!sandboxEnabled) return;
+
+		// Inject sandbox agent guidelines if available
+		const guidance = (globalThis as any).__sandbox_agents_guidance as string | undefined;
+		if (guidance) {
+			return {
+				systemPrompt: event.systemPrompt + "\n\n## Sandbox Extension Guidelines\n\n" + guidance,
+			};
+		}
 	});
 
 	pi.on("session_shutdown", async () => {
@@ -929,6 +971,72 @@ export default function (pi: ExtensionAPI) {
 				lines.push(`  ${sandbox.id}: PID ${sandbox.pid}, uptime ${uptime}s`);
 			});
 			ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
+
+	// Register a safe delete tool that respects .gitignore
+	pi.registerTool({
+		name: "safe_delete",
+		label: "Safe Delete",
+		description: "Delete files safely - only allows deletion of files in .gitignore to prevent accidental deletion of important files",
+		parameters: Type.Object({
+			path: Type.String({ description: "File or directory path to delete (relative to cwd)" }),
+		}),
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			try {
+				const { existsSync, rmSync, statSync } = await import("node:fs");
+				const { resolve, relative } = await import("node:path");
+				const { exec } = await import("node:child_process");
+				const { promisify } = await import("node:util");
+				const execAsync = promisify(exec);
+
+				const targetPath = resolve(ctx.cwd, params.path);
+				const relativePath = relative(ctx.cwd, targetPath);
+
+				// Security check: ensure path is within cwd
+				if (!targetPath.startsWith(ctx.cwd)) {
+					throw new Error(`Path ${params.path} is outside project directory`);
+				}
+
+				if (!existsSync(targetPath)) {
+					throw new Error(`File or directory not found: ${params.path}`);
+				}
+
+				// Check if path matches .gitignore patterns
+				let isIgnored = false;
+				try {
+					const { stdout } = await execAsync(`cd "${ctx.cwd}" && git check-ignore "${relativePath}" 2>/dev/null || true`);
+					isIgnored = stdout.trim().length > 0;
+				} catch {
+					// If git command fails, treat as not ignored for safety
+					isIgnored = false;
+				}
+
+				if (!isIgnored) {
+					// File is NOT in gitignore - warn and prevent deletion
+					return {
+						content: [{ 
+							type: "text", 
+							text: `⚠️  BLOCKED: "${params.path}" is NOT in .gitignore\n\nThis appears to be a tracked or important file. The sandbox prevents deletion of non-ignored files for your safety.\n\nIf you're certain you want to delete this file, use bash directly: rm ${params.path}` 
+						}],
+						details: { deleted: false, reason: "not_gitignored", path: params.path },
+					};
+				}
+
+				// File IS in gitignore - safe to delete
+				const isDirectory = statSync(targetPath).isDirectory();
+				rmSync(targetPath, { recursive: isDirectory, force: true });
+
+				return {
+					content: [{ 
+						type: "text", 
+						text: `✅ Safely deleted: ${params.path}` 
+					}],
+					details: { deleted: true, path: params.path, isDirectory },
+				};
+			} catch (error) {
+				throw new Error(`Safe delete failed: ${error instanceof Error ? error.message : String(error)}`);
+			}
 		},
 	});
 

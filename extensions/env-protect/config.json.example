@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy this file to config.json to customize",
+  "mode": "permissive",
+  "patterns": {
+    "blockedVars": [],
+    "blockedFiles": [],
+    "blockedCommands": []
+  },
+  "redactionStrategy": "masking",
+  "requireConfirmation": true,
+  "auditLog": true,
+  "allowlistedVars": []
+}

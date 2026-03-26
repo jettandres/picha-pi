@@ -1,67 +1,52 @@
-# Agentic Coding Environment
+# Pi Coding Agent Extensions
 
-Isolated Docker environment for agentic coding with [Pi](https://github.com/badlogic/pi-mono), Neovim, and essential dev tools.
+A personal collection of [Pi coding agent](https://github.com/badlogic/pi-mono) extensions I use to enhance and secure my agentic coding workflow.
 
-**Base**: Arch Linux (rolling release)
+## Extensions
 
-## What's Included
+### Safety & Security
 
-- **Pi** - Minimal terminal AI coding agent by Mario Zechner
-- Neovim - Bare minimum installation
-- **lazygit** - Terminal git UI
-- **asdf** - Version manager for:
-  - Node.js 22
-  - Go 1.22
-  - Python 3.12
-- Docker + buildx + compose
-- Essential tools: git, ripgrep, fd, jq, htop, tree, tmux, etc.
+- **block-env-exposure** - Prevents the agent from exposing environment variables in code or outputs
+- **confirm-destructive** - Prompts for confirmation before running destructive commands (rm, etc.)
+- **dirty-repo-guard** - Warns when making changes to a repository with uncommitted changes
+- **permission-gate** - Requires explicit confirmation for sensitive operations
+- **protected-paths** - Prevents modifications to critical files and directories
+- **purpose-gate** - Ensures agent stays focused on the stated purpose of the task
 
-## Quick Start
+### User Experience
 
-```bash
-# Edit secrets file with your API keys
-nano secrets/env
+- **question** - Enhanced question/prompt UI with better formatting
+- **questionnaire** - Multi-question form system for gathering user input
+- **status-line** - Custom status line for the Pi agent TUI
+- **subagent-widget** - Widget for managing and displaying subagent information
 
-# Build and run
-make build
-make up
-make shell
-```
+### Advanced Features
 
-## Makefile Commands
+- **plan-mode** - Adds planning capabilities to the agent workflow
+- **sandbox** - Isolated execution environment for experimental code
+- **confirm-install** - Requires confirmation before installing packages or dependencies
 
-| Target | Description |
-|--------|-------------|
-| `make build` | Build the Docker image |
-| `make up` | Start the container |
-| `make down` | Stop the container |
-| `make shell` | Open shell in container |
-| `make logs` | View container logs |
-| `make clean` | Stop and remove image |
-
-## Volumes
-
-| Path | Description |
-|------|-------------|
-| `./data` | Persistent storage at `/home/agent/data` |
-| `~/.ssh` | SSH keys for git access |
-| `../` | Parent dir mounted as `/workspace` |
-
-## Secrets
-
-API keys are stored in `secrets/env` (gitignored):
+## Setup
 
 ```bash
-OPENCODE_API_KEY=your_opencode_api_key_here
-ANTHROPIC_API_KEY=sk-ant-...
-OPENAI_API_KEY=...
+# Build TypeScript extensions
+npm run build
+
+# Extensions are compiled to JavaScript in the extensions/ directory
 ```
 
-## Inside the Container
+## Usage
+
+Load extensions on a per-session basis using the `-e` flag:
 
 ```bash
-pi       # Start Pi coding agent
-nvim     # Open Neovim
-lazygit  # Git TUI
-tmux     # Terminal multiplexer
+# Load a single extension
+pi -e extensions/block-env-exposure
+
+# Load multiple extensions
+pi -e extensions/block-env-exposure -e extensions/confirm-destructive -e extensions/dirty-repo-guard
 ```
+
+## Notes
+
+This is a personal project. Extensions are tailored to my specific workflow and security requirements. Feel free to adapt them for your own use!

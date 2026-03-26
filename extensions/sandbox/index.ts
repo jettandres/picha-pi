@@ -350,16 +350,15 @@ function createAgentSandboxConfig(baseConfig: SandboxConfig, agentId: string): A
 }
 
 function validateCommand(command: string): { valid: boolean; error?: string } {
-	// Check for potentially dangerous patterns
+	// Check for actually dangerous patterns (not including normal command chaining)
+	// Note: We allow &&, ||, ;, and command substitution as these are legitimate shell operations
 	const dangerousPatterns = [
-		/(\|\||&&)/, // Command chaining
-		/;[\s\S]*;/, // Multiple commands
-		/\$\(/, // Command substitution
-		/`[^`]*`/, // Command substitution
-		/\b(kill|killall)\b/, // Process killing
-		/\b(rm|unlink)\s+-rf\b/, // Recursive force delete
+		/\b(killall)\b/, // Kill all processes
+		/\b(rm|unlink)\s+-rf\s+\//, // Recursive force delete on root
 		/\b(dd\s+if=\/dev\/(zero|random))\b/, // Disk destruction
-		/\b(mkfs|fdisk|dd)\b.*\b(\/dev\/[a-z]+\d*)\b/, // Disk manipulation
+		/\b(mkfs|fdisk|parted)\b.*\b(\/dev\/[a-z]+\d*)\b/, // Disk manipulation
+		/\beval\s*\(/, // eval() function calls
+		/\b(chmod|chown)\s+777/, // Dangerous permission changes
 	];
 
 	for (const pattern of dangerousPatterns) {

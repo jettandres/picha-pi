@@ -98,8 +98,7 @@ function loadSandboxProfile(profileDir: string, securityLevel: string): string {
 function createDynamicProfile(
 	baseProfile: string,
 	config: MacOSSandboxConfig,
-	cwd: string,
-	agentId?: string
+	cwd: string
 ): string {
 	const safeCwd = sanitizePath(cwd);
 	
@@ -167,8 +166,7 @@ function createSandboxExecCommand(command: string, profilePath: string): string 
 
 export function createMacOSSandboxedBashOps(
 	config: MacOSSandboxConfig,
-	profileDir: string,
-	agentId?: string
+	profileDir: string
 ): BashOperations {
 	return {
 		async exec(commandInput, cwd, { onData, signal, timeout }) {
@@ -190,7 +188,7 @@ export function createMacOSSandboxedBashOps(
 				const baseProfile = loadSandboxProfile(profileDir, securityLevel);
 				
 				// Create dynamic profile with working directory and config rules
-				const dynamicProfile = createDynamicProfile(baseProfile, config, safeCwd, agentId);
+				const dynamicProfile = createDynamicProfile(baseProfile, config, safeCwd);
 				
 				// Write temporary profile
 				const profilePath = writeTempProfile(dynamicProfile);
@@ -218,7 +216,7 @@ export function createMacOSSandboxedBashOps(
 					});
 
 					// Track active sandbox
-					const sandboxId = agentId ? `agent-${agentId}-${Date.now()}` : `sandbox-${Date.now()}`;
+					const sandboxId = `sandbox-${Date.now()}`;
 					activeSandboxes.set(sandboxId, {
 						id: sandboxId,
 						pid: child.pid || 0,

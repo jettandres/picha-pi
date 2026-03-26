@@ -101,15 +101,6 @@ interface ActiveSandbox {
 	config: SandboxConfig;
 }
 
-interface AgentSandboxConfig extends SandboxConfig {
-	agentId?: string;
-	resourceLimits?: {
-		cpuPercent?: number;
-		memoryMB?: number;
-		diskQuotaMB?: number;
-	};
-}
-
 // Default configuration loaded from file
 const DEFAULT_CONFIG: SandboxConfig = JSON.parse(
 	readFileSync(join(__dirname, "default-config.json"), "utf-8")
@@ -143,18 +134,15 @@ function checkTools(): { bwrap: boolean; socat: boolean; ripgrep: boolean } {
 	return result;
 }
 
-// Track active sandboxes for multi-agent orchestration
+// Track active sandboxes
 const activeSandboxes: Map<string, ActiveSandbox> = new Map();
 
-// Track active socat proxies for multi-agent orchestration
-const activeSocatProxies: Map<string, ActiveSocatProxy> = new Map();
-
-interface ActiveSocatProxy {
-	agentId: string;
+// Track active socat proxy (single global proxy)
+let activeSocatProxy: {
 	port: number;
 	allowedDomains: string[];
 	process: any; // ChildProcess
-}
+} | null = null;
 
 function isSocatAvailable(): boolean {
 	try {
@@ -192,22 +180,25 @@ echo "Socat domain filter placeholder - in production this would validate domain
 	return scriptPath;
 }
 
-function startSocatProxy(agentId: string, allowedDomains: string[], port: number): boolean {
+function startSocatProxy(allowedDomains: string[], port: number): boolean {
 	try {
+		// Check if already running
+		if (activeSocatProxy) {
+			console.warn(`Socat proxy already running on port ${activeSocatProxy.port}`);
+			return false;
+		}
+
 		// Check if port is already in use
 		const portCheck = spawnSync("ss", ["-tuln"], { stdio: 'pipe' });
 		if (portCheck.stdout && portCheck.stdout.toString().includes(`:${port} `)) {
-			console.warn(`Port ${port} already in use, cannot start socat proxy for agent ${agentId}`);
+			console.warn(`Port ${port} already in use, cannot start socat proxy`);
 			return false;
 		}
-		
-		// In a real implementation, we would create a more sophisticated filter
-		// For now, we'll start a simple echo server
 		
 		// Start socat proxy in background
 		const socatProcess = spawn("socat", [
 			`TCP-LISTEN:${port},fork,reuseaddr`,
-			`SYSTEM:echo "HTTP/1.1 200 OK"; echo "Content-Type: text/plain"; echo ""; echo "Filtered request for {}"`
+			`SYSTEM:echo "HTTP/1.1 200 OK"; echo "Content-Type: text/plain"; echo ""; echo "Filtered request"`
 		], {
 			detached: true,
 			stdio: ['ignore', 'ignore', 'ignore']
@@ -216,34 +207,33 @@ function startSocatProxy(agentId: string, allowedDomains: string[], port: number
 		socatProcess.unref();
 		
 		// Track the proxy
-		activeSocatProxies.set(agentId, {
-			agentId,
+		activeSocatProxy = {
 			port,
 			allowedDomains,
 			process: socatProcess
-		});
+		};
 		
-		console.log(`Started socat proxy for agent ${agentId} on port ${port}`);
+		console.log(`Started socat proxy on port ${port}`);
 		return true;
 	} catch (error) {
-		console.error(`Failed to start socat proxy for agent ${agentId}:`, error);
+		console.error(`Failed to start socat proxy:`, error);
 		return false;
 	}
 }
 
-function stopSocatProxy(agentId: string): void {
-	const proxy = activeSocatProxies.get(agentId);
-	if (proxy) {
-		try {
-			if (proxy.process && proxy.process.pid) {
-				process.kill(proxy.process.pid, "SIGTERM");
-			}
-		} catch (error) {
-			console.warn(`Failed to kill socat proxy process for agent ${agentId}:`, error);
+function stopSocatProxy(): void {
+	if (!activeSocatProxy) return;
+
+	try {
+		if (activeSocatProxy.process && activeSocatProxy.process.pid) {
+			process.kill(activeSocatProxy.process.pid, "SIGTERM");
 		}
-		activeSocatProxies.delete(agentId);
-		console.log(`Stopped socat proxy for agent ${agentId}`);
+	} catch (error) {
+		console.warn(`Failed to kill socat proxy process:`, error);
 	}
+
+	activeSocatProxy = null;
+	console.log(`Stopped socat proxy`);
 }
 
 function expandHome(path: string): string {
@@ -333,21 +323,7 @@ function loadConfig(cwd: string): SandboxConfig {
 	return result;
 }
 
-function createAgentSandboxConfig(baseConfig: SandboxConfig, agentId: string): AgentSandboxConfig {
-	// Create a sandbox config specific to this agent
-	const agentConfig: AgentSandboxConfig = {
-		...baseConfig,
-		agentId,
-		// Apply agent-specific resource limits (could be configured per agent in the future)
-		resourceLimits: {
-			cpuPercent: 50, // Default to 50% CPU
-			memoryMB: baseConfig.maxMemoryMB || 512,
-			diskQuotaMB: 100 // Default to 100MB disk quota
-		}
-	};
-	
-	return agentConfig;
-}
+
 
 function validateCommand(command: string): { valid: boolean; error?: string } {
 	// Check for actually dangerous patterns (not including normal command chaining)
@@ -391,7 +367,7 @@ function sanitizePath(path: string): string {
 	return expandHome(path);
 }
 
-function createBwrapCommand(command: string, config: SandboxConfig, cwd: string, agentId?: string): string {
+function createBwrapCommand(command: string, config: SandboxConfig, cwd: string): string {
 	// Validate the command first
 	const validation = validateCommand(command);
 	if (!validation.valid) {
@@ -451,13 +427,6 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	// Handle current working directory (the only writable filesystem by default)
 	args.push("--bind", safeCwd, safeCwd);
 	
-	// For agent-specific sandboxes, we might want to create isolated workspaces
-	if (agentId) {
-		// Create an agent-specific temporary directory
-		const agentTmp = `/tmp/pi-agent-${agentId}`;
-		args.push("--tmpfs", agentTmp);
-	}
-	
 	// Apply security level settings
 	switch (config.securityLevel) {
 		case "strict":
@@ -465,8 +434,7 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 			break;
 		case "moderate":
 			// Use socat-based filtering if available and enabled
-			if (config.network?.useSocatProxy && isSocatAvailable() && agentId) {
-				const proxyPort = config.network.proxyPort || 8080;
+			if (config.network?.useSocatProxy && isSocatAvailable()) {
 				// In moderate mode with socat, we still allow network but route through proxy
 				// The actual proxy setup happens in the bash operations where we can set env vars
 			} else {
@@ -516,7 +484,7 @@ function createBwrapCommand(command: string, config: SandboxConfig, cwd: string,
 	return fullCommand;
 }
 
-function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOperations {
+function createSandboxedBashOps(config: SandboxConfig): BashOperations {
 	return {
 		async exec(command, cwd, { onData, signal, timeout }) {
 			try {
@@ -531,14 +499,14 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 				let proxyStarted = false;
 				let proxyPort = 8080;
 				
-				if (agentId && config.securityLevel === "moderate" && 
+				if (config.securityLevel === "moderate" && 
 					config.network?.useSocatProxy && isSocatAvailable()) {
 					proxyPort = config.network.proxyPort || 8080;
-					proxyStarted = startSocatProxy(agentId, config.network.allowedDomains || [], proxyPort);
+					proxyStarted = startSocatProxy(config.network.allowedDomains || [], proxyPort);
 				}
 				
 				const effectiveTimeout = timeout || config.maxExecutionTime || 30;
-				const wrappedCommand = createBwrapCommand(command, config, safeCwd, agentId);
+				const wrappedCommand = createBwrapCommand(command, config, safeCwd);
 
 				return new Promise((resolve, reject) => {
 					// Prepare environment variables for the sandboxed process
@@ -663,7 +631,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 					}
 					
 					// If we have a socat proxy, set HTTP proxy environment variables
-					if (proxyStarted && agentId) {
+					if (proxyStarted) {
 						env.HTTP_PROXY = `http://localhost:${proxyPort}`;
 						env.HTTPS_PROXY = `http://localhost:${proxyPort}`;
 						env.http_proxy = `http://localhost:${proxyPort}`;
@@ -678,7 +646,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 					});
 
 					// Track active sandbox
-					const sandboxId = agentId ? `agent-${agentId}-${Date.now()}` : `sandbox-${Date.now()}`;
+					const sandboxId = `sandbox-${Date.now()}`;
 					activeSandboxes.set(sandboxId, {
 						id: sandboxId,
 						pid: child.pid || 0,
@@ -701,9 +669,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 								}
 							}
 							// Stop socat proxy if it was started
-							if (agentId) {
-								stopSocatProxy(agentId);
-							}
+							stopSocatProxy();
 						}, effectiveTimeout * 1000);
 					}
 
@@ -727,9 +693,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 						activeSandboxes.delete(sandboxId);
 						if (timeoutHandle) clearTimeout(timeoutHandle);
 						// Stop socat proxy if it was started
-						if (agentId) {
-							stopSocatProxy(agentId);
-						}
+						stopSocatProxy();
 						reject(new Error(`Sandbox execution failed: ${err.message}`));
 					});
 
@@ -743,9 +707,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 							}
 						}
 						// Stop socat proxy if it was started
-						if (agentId) {
-							stopSocatProxy(agentId);
-						}
+						stopSocatProxy();
 					};
 
 					signal?.addEventListener("abort", onAbort, { once: true });
@@ -756,9 +718,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 						signal?.removeEventListener("abort", onAbort);
 						
 						// Stop socat proxy if it was started
-						if (agentId) {
-							stopSocatProxy(agentId);
-						}
+						stopSocatProxy();
 
 						if (signal?.aborted) {
 							reject(new Error("aborted"));
@@ -773,9 +733,7 @@ function createSandboxedBashOps(config: SandboxConfig, agentId?: string): BashOp
 				});
 			} catch (error) {
 				// Stop socat proxy if it was started
-				if (agentId) {
-					stopSocatProxy(agentId);
-				}
+				stopSocatProxy();
 				return Promise.reject(new Error(`Sandbox setup failed: ${error instanceof Error ? error.message : String(error)}`));
 			}
 		},
@@ -828,78 +786,7 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	// Register an agent-specific sandbox tool
-	const AgentBashParams = Type.Object({
-		command: Type.String({ description: "The bash command to execute" }),
-		agentId: Type.String({ description: "The ID of the agent executing the command" }),
-		cwd: Type.Optional(Type.String({ description: "Working directory for the command" })),
-		timeout: Type.Optional(Type.Number({ description: "Timeout in seconds" })),
-	});
 
-	pi.registerTool({
-		name: "agent_bash",
-		label: "Agent Bash (sandboxed)",
-		description: "Execute bash commands in an agent-specific sandbox environment",
-		parameters: AgentBashParams,
-		async execute(_id, params, signal, onUpdate, _ctx) {
-			if (!sandboxEnabled) {
-				return {
-					content: [{ type: "text", text: "Sandbox is disabled" }],
-					details: { error: "Sandbox disabled" }
-				};
-			}
-
-			const agentConfig = createAgentSandboxConfig(currentConfig, params.agentId);
-			const effectiveCwd = params.cwd || localCwd;
-			
-			let agentSandboxedBash;
-			if (PLATFORM === "linux" && !isTermux()) {
-				// Standard Linux with bubblewrap (priority #1)
-				agentSandboxedBash = createBashTool(effectiveCwd, {
-					operations: createSandboxedBashOps(agentConfig, params.agentId),
-				});
-			} else if (isTermux()) {
-				// Termux with proot-distro (priority #2)
-				agentSandboxedBash = createBashTool(effectiveCwd, {
-					operations: createTermuxSandboxedBashOps(agentConfig, params.agentId),
-				});
-			} else if (PLATFORM === "darwin") {
-				// macOS with sandbox-exec (priority #3)
-				agentSandboxedBash = createBashTool(effectiveCwd, {
-					operations: createMacOSSandboxedBashOps(agentConfig, __dirname, params.agentId),
-				});
-			} else {
-				// Fallback: unsupported platform
-				agentSandboxedBash = createBashTool(effectiveCwd, {
-					operations: createSandboxedBashOps(agentConfig, params.agentId),
-				});
-			}
-
-			return agentSandboxedBash.execute(_id, { 
-				command: params.command, 
-				timeout: params.timeout 
-			}, signal, onUpdate);
-		},
-		renderCall(args, theme) {
-			return new Text(
-				`${theme.fg("toolTitle", theme.bold("agent_bash "))} ${theme.fg("muted", `(agent: ${args.agentId})`)}\n${theme.fg("dim", args.command)}`,
-				0, 0
-			);
-		},
-		renderResult(result, _options, theme) {
-			const details = result.details as { error?: string } | undefined;
-			if (details?.error) {
-				return new Text(
-					theme.fg("error", `Error: ${details.error}`),
-					0, 0
-				);
-			}
-			return new Text(
-				theme.fg("success", "✓ Command executed in agent sandbox"),
-				0, 0
-			);
-		}
-	});
 
 	pi.on("user_bash", () => {
 		if (!sandboxEnabled) return;
@@ -934,18 +821,6 @@ export default function (pi: ExtensionAPI) {
 			sandboxEnabled = false;
 			ctx.ui.notify("Sandbox disabled via config", "info");
 			return;
-		}
-
-		// Load AGENTS.md guidance if it exists
-		try {
-			const agentsMdPath = join(__dirname, "AGENTS.md");
-			if (existsSync(agentsMdPath)) {
-				const agentsGuidance = readFileSync(agentsMdPath, "utf-8");
-				// Store for injection in before_agent_start
-				(globalThis as any).__sandbox_agents_guidance = agentsGuidance;
-			}
-		} catch (e) {
-			// Silently ignore if can't load AGENTS.md
 		}
 
 		// Platform-specific initialization (priority: Linux > Termux > macOS)
@@ -1007,29 +882,12 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`Sandbox initialized on ${platformLabel} (${securityLevel} security)`, "info");
 	});
 
-	pi.on("before_agent_start", async (event, ctx) => {
-		if (!sandboxEnabled) return;
-
-		// Inject sandbox agent guidelines if available
-		const guidance = (globalThis as any).__sandbox_agents_guidance as string | undefined;
-		if (guidance) {
-			return {
-				systemPrompt: event.systemPrompt + "\n\n## Sandbox Extension Guidelines\n\n" + guidance,
-			};
-		}
-	});
-
 	pi.on("session_shutdown", async () => {
 		// Clean up platform-specific resources (priority: Linux > Termux > macOS)
 		if (PLATFORM === "linux" && !isTermux()) {
 			// Linux cleanup
 			activeSandboxes.clear();
-			
-			// Clean up any active socat proxies
-			for (const agentId of activeSocatProxies.keys()) {
-				stopSocatProxy(agentId);
-			}
-			activeSocatProxies.clear();
+			stopSocatProxy();
 		} else if (isTermux()) {
 			// Termux cleanup
 			clearActiveTermuxSandboxes();
@@ -1063,46 +921,6 @@ export default function (pi: ExtensionAPI) {
 				`  Allow Write: ${currentConfig.filesystem?.allowWrite?.join(", ") || "(none)"}`,
 				`  Deny Write: ${currentConfig.filesystem?.denyWrite?.join(", ") || "(none)"}`,
 			];
-			ctx.ui.notify(lines.join("\n"), "info");
-		},
-	});
-
-	pi.registerCommand("sandbox-agents", {
-		description: "Show active sandboxed agents",
-		handler: async (_args, ctx) => {
-			let activeSandboxList: Array<{ id: string; pid: number; startTime: number }> = [];
-			
-			// Priority: Linux > Termux > macOS
-			if (PLATFORM === "linux" && !isTermux()) {
-				activeSandboxList = Array.from(activeSandboxes.entries()).map(([id, sandbox]) => ({
-					id,
-					pid: sandbox.pid,
-					startTime: sandbox.startTime
-				}));
-			} else if (isTermux()) {
-				activeSandboxList = getActiveTermuxSandboxes().map(s => ({
-					id: s.id,
-					pid: s.pid,
-					startTime: s.startTime
-				}));
-			} else if (PLATFORM === "darwin") {
-				activeSandboxList = getActiveSandboxes().map(s => ({
-					id: s.id,
-					pid: s.pid,
-					startTime: s.startTime
-				}));
-			}
-			
-			if (activeSandboxList.length === 0) {
-				ctx.ui.notify("No active sandboxed agents", "info");
-				return;
-			}
-
-			const lines = ["Active Sandboxed Agents:"];
-			activeSandboxList.forEach(sandbox => {
-				const uptime = Math.floor((Date.now() - sandbox.startTime) / 1000);
-				lines.push(`  ${sandbox.id}: PID ${sandbox.pid}, uptime ${uptime}s`);
-			});
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});

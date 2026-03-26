@@ -172,8 +172,7 @@ function initializeSandboxDirectory(): void {
 function createPRootDistroCommand(
 	command: string,
 	config: TermuxSandboxConfig,
-	cwd: string,
-	agentId?: string
+	cwd: string
 ): { cmd: string; distro: string } {
 	const distro = ensureDistroInstalled("alpine");
 	
@@ -241,7 +240,6 @@ function validateCommand(command: string): { valid: boolean; error?: string } {
  * Start socat proxy for network filtering
  */
 function startSocatProxy(
-	agentId: string,
 	allowedDomains: string[],
 	port: number
 ): boolean {
@@ -249,7 +247,7 @@ function startSocatProxy(
 		// Check if port is already in use
 		const portCheck = spawnSync("ss", ["-tuln"], { stdio: "pipe", encoding: "utf-8" });
 		if (portCheck.stdout && portCheck.stdout.includes(`:${port} `)) {
-			console.warn(`Port ${port} already in use, cannot start socat proxy for agent ${agentId}`);
+			console.warn(`Port ${port} already in use, cannot start socat proxy`);
 			return false;
 		}
 
@@ -263,10 +261,10 @@ function startSocatProxy(
 		});
 
 		socatProcess.unref();
-		console.log(`Started socat proxy for agent ${agentId} on port ${port}`);
+		console.log(`Started socat proxy on port ${port}`);
 		return true;
 	} catch (error) {
-		console.error(`Failed to start socat proxy for agent ${agentId}:`, error);
+		console.error(`Failed to start socat proxy:`, error);
 		return false;
 	}
 }
@@ -274,12 +272,12 @@ function startSocatProxy(
 /**
  * Stop socat proxy
  */
-function stopSocatProxy(agentId: string): void {
+function stopSocatProxy(): void {
 	try {
-		spawnSync("pkill", ["-f", `socat.*${agentId}`], { stdio: "pipe" });
-		console.log(`Stopped socat proxy for agent ${agentId}`);
+		spawnSync("pkill", ["-f", `socat.*TCP-LISTEN`], { stdio: "pipe" });
+		console.log(`Stopped socat proxy`);
 	} catch (error) {
-		console.warn(`Failed to stop socat proxy for agent ${agentId}:`, error);
+		console.warn(`Failed to stop socat proxy:`, error);
 	}
 }
 
@@ -287,8 +285,7 @@ function stopSocatProxy(agentId: string): void {
  * Create sandboxed bash operations using proot-distro
  */
 export function createTermuxSandboxedBashOps(
-	config: TermuxSandboxConfig,
-	agentId?: string
+	config: TermuxSandboxConfig
 ): BashOperations {
 	initializeSandboxDirectory();
 
@@ -310,18 +307,18 @@ export function createTermuxSandboxedBashOps(
 				let proxyPort = 8080;
 
 				if (
-					agentId &&
+					
 					config.securityLevel === "moderate" &&
 					config.network?.useSocatProxy &&
 					isSocatAvailable()
 				) {
 					proxyPort = config.network.proxyPort || 8080;
-					proxyStarted = startSocatProxy(agentId, config.network.allowedDomains || [], proxyPort);
+					proxyStarted = startSocatProxy(config.network.allowedDomains || [], proxyPort);
 				}
 
 				// Build the proot-distro command
 				const effectiveTimeout = timeout || config.maxExecutionTime || 30;
-				const { cmd: prootDistroCmd, distro } = createPRootDistroCommand(command, config, cwd, agentId);
+				const { cmd: prootDistroCmd, distro } = createPRootDistroCommand(command, config, cwd);
 
 				return new Promise((resolve, reject) => {
 					// Prepare environment
@@ -346,7 +343,7 @@ export function createTermuxSandboxedBashOps(
 					});
 
 					// Track active sandbox
-					const sandboxId = agentId ? `agent-${agentId}-${Date.now()}` : `sandbox-${Date.now()}`;
+					const sandboxId = `sandbox-${Date.now()}`;
 					activeSandboxes.set(sandboxId, {
 						id: sandboxId,
 						pid: child.pid || 0,
@@ -369,9 +366,7 @@ export function createTermuxSandboxedBashOps(
 									child.kill("SIGKILL");
 								}
 							}
-							if (agentId) {
-								stopSocatProxy(agentId);
-							}
+					stopSocatProxy();
 						}, (effectiveTimeout + 5) * 1000);
 					}
 
@@ -394,7 +389,7 @@ export function createTermuxSandboxedBashOps(
 					child.on("error", (err) => {
 						activeSandboxes.delete(sandboxId);
 						if (timeoutHandle) clearTimeout(timeoutHandle);
-						if (agentId) stopSocatProxy(agentId);
+						 stopSocatProxy();
 
 						reject(new Error(`Sandbox execution failed: ${err.message}`));
 					});
@@ -408,9 +403,7 @@ export function createTermuxSandboxedBashOps(
 								child.kill("SIGKILL");
 							}
 						}
-						if (agentId) {
-							stopSocatProxy(agentId);
-						}
+					stopSocatProxy();
 					};
 
 					signal?.addEventListener("abort", onAbort, { once: true });
@@ -419,10 +412,7 @@ export function createTermuxSandboxedBashOps(
 						activeSandboxes.delete(sandboxId);
 						if (timeoutHandle) clearTimeout(timeoutHandle);
 						signal?.removeEventListener("abort", onAbort);
-
-						if (agentId) {
-							stopSocatProxy(agentId);
-						}
+					stopSocatProxy();
 
 						if (signal?.aborted) {
 							reject(new Error("aborted"));
@@ -435,9 +425,7 @@ export function createTermuxSandboxedBashOps(
 					});
 				});
 			} catch (error) {
-				if (agentId) {
-					stopSocatProxy(agentId);
-				}
+					stopSocatProxy();
 				return Promise.reject(
 					new Error(
 						`Sandbox setup failed: ${error instanceof Error ? error.message : String(error)}`

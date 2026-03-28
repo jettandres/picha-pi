@@ -135,7 +135,7 @@ export default function(pi: ExtensionAPI) {
   ): Promise<void> {
     const model = ctx.model
       ? `${ctx.model.provider}/${ctx.model.id}`
-      : "openrouter/google/gemini-3-flash-preview";
+      : "gpt-5.3-codex";
 
     return new Promise<void>((resolve) => {
       const proc = spawn("pi", [

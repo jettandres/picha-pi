@@ -146,7 +146,6 @@ export default function(pi: ExtensionAPI) {
         "--model", model,
         "--tools", "read,bash,grep,find,ls",
         "--thinking", "off",
-        "-e", "env-protect",
         prompt,
       ], {
         stdio: ["ignore", "pipe", "pipe"],

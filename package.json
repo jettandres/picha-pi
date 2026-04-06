@@ -1,7 +1,7 @@
 {
-  "name": "vibes-project",
+  "name": "picha-pi",
   "version": "1.0.0",
-  "description": "Agentic coding environment project",
+  "description": "Agentic coding tools",
   "type": "module",
   "private": true,
   "scripts": {

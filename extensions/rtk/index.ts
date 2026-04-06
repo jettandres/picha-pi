@@ -44,13 +44,15 @@ class RtkRewriter {
     }
 
     try {
-      const result = execSync(`rtk rewrite ${JSON.stringify(command)}`, {
+      // RTK may exit with non-zero codes even on success, so we use spawnSync and check output
+      const { spawnSync } = require("node:child_process");
+      const result = spawnSync("rtk", ["rewrite", command], {
         encoding: "utf-8",
         timeout: 2000,
-        stdio: ["pipe", "pipe", "ignore"],
-      }).trim();
+      });
 
-      return result && result !== command ? result : null;
+      const output = (result.stdout || result.stderr || "").trim();
+      return output && output !== command ? output : null;
     } catch (error) {
       if (this.config.verbose) {
         console.warn(`[rtk] rewrite failed for: ${command.substring(0, 50)}...`);

@@ -1,0 +1,29 @@
+{
+  "name": "@picha-pi/rtk-extension",
+  "version": "1.0.0",
+  "description": "RTK (Rust Token Killer) integration for Pi Coding Agent — 60-90% token savings",
+  "type": "module",
+  "main": "index.ts",
+  "license": "MIT",
+  "keywords": [
+    "rtk",
+    "pi-coding-agent",
+    "extension",
+    "token-savings",
+    "llm",
+    "optimization"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": ">=0.1.0"
+  },
+  "devDependencies": {
+    "@mariozechner/pi-coding-agent": "workspace:*",
+    "@types/node": "^20.0.0"
+  },
+  "scripts": {
+    "test": "echo 'Tests not configured yet'"
+  }
+}

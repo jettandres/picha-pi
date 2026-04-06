@@ -4,14 +4,6 @@
 
 ## Install
 
-**Prerequisites:** RTK must be in your `$PATH`
-
-```bash
-# Install RTK (if not already done)
-brew install rtk
-# or: curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh
-```
-
 **Enable extension:**
 
 This extension is auto-discovered in `.pi/extensions/rtk/` (project) or `~/.pi/agent/extensions/rtk/` (global).
@@ -20,6 +12,10 @@ Or pass explicitly:
 ```bash
 pi -e /path/to/picha-pi/extensions/rtk/
 ```
+
+**RTK Binary:**
+
+On startup, if RTK is not found in `$PATH`, the extension will prompt you to install it automatically using the official RTK install script. You can also use `/rtk-install` anytime to install manually.
 
 ## How It Works
 
@@ -49,6 +45,7 @@ npm run build           → rtk err npm run build
 **Commands in Pi:**
 - `/rtk-stats` — Show rewrite count and estimated tokens saved
 - `/rtk-toggle` — Enable/disable RTK for this session
+- `/rtk-install` — Install RTK binary (Homebrew or quick install)
 
 ## Configuration
 

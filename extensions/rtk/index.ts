@@ -85,6 +85,29 @@ class RtkRewriter {
   }
 }
 
+async function installRtk(ctx: any): Promise<boolean> {
+  ctx.ui.notify("Installing RTK...", "info");
+
+  try {
+    execSync(
+      'curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh',
+      { stdio: "inherit", timeout: 120000, shell: "/bin/bash" }
+    );
+
+    ctx.ui.notify(
+      "[rtk] Installation complete! Run /reload to enable.",
+      "success"
+    );
+    return true;
+  } catch (error) {
+    ctx.ui.notify(
+      "[rtk] Installation failed. See docs: https://github.com/rtk-ai/rtk#installation",
+      "error"
+    );
+    return false;
+  }
+}
+
 export default function registerRtkExtension(pi: ExtensionAPI) {
   const enabled = process.env.RTK_EXTENSION_ENABLED !== "false";
   const verbose = process.env.RTK_EXTENSION_VERBOSE === "true";
@@ -93,14 +116,26 @@ export default function registerRtkExtension(pi: ExtensionAPI) {
   const rewriter = new RtkRewriter({ enabled, verbose, dryRun });
 
   pi.on("session_start", async (_event, ctx) => {
-    if (!rewriter.isEnabled()) {
+    if (rewriter.isEnabled()) {
       if (verbose) {
-        ctx.ui.notify("[rtk] RTK binary not found in PATH", "warning");
+        ctx.ui.notify("[rtk] Extension ready", "info");
       }
       return;
     }
-    if (verbose) {
-      ctx.ui.notify("[rtk] Extension ready", "info");
+
+    // RTK not available - offer to install
+    const shouldInstall = await ctx.ui.confirm(
+      "[rtk] Not Installed",
+      "RTK binary not found in PATH. Install now?"
+    );
+
+    if (shouldInstall) {
+      await installRtk(ctx);
+    } else {
+      ctx.ui.notify(
+        "[rtk] Disabled (RTK not installed). Use /rtk-install to enable.",
+        "warning"
+      );
     }
   });
 
@@ -136,6 +171,17 @@ export default function registerRtkExtension(pi: ExtensionAPI) {
     handler: async (_args, ctx) => {
       rewriter.config.enabled = !rewriter.config.enabled;
       ctx.ui.notify(`[rtk] ${rewriter.config.enabled ? "enabled" : "disabled"}`, "info");
+    },
+  });
+
+  pi.registerCommand("rtk-install", {
+    description: "Install RTK binary",
+    handler: async (_args, ctx) => {
+      const success = await installRtk(ctx);
+      if (success) {
+        // Reload extension to pick up newly installed RTK
+        await ctx.reload();
+      }
     },
   });
 }

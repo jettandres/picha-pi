@@ -10,10 +10,10 @@ Interact with Linear's GraphQL API for lightweight project management: reading t
 
 ## Authentication
 
-Set `LIN_API_KEY` before running commands:
+Set `LINEAR_API_KEY` before running commands:
 
 ```bash
-export LIN_API_KEY="lin_api_your_key_here"
+export LINEAR_API_KEY="lin_api_your_key_here"
 ```
 
 All requests go to: `https://api.linear.app/graphql`
@@ -27,7 +27,7 @@ Query only the fields you need to avoid wasting tokens. Replace the selection se
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "query { issue(id: \"ISSUE-123\") { id identifier title description state { name } subtasks { nodes { id identifier title description } } } }"
   }' | jq .
@@ -38,7 +38,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d "{
     \"query\": \"query { issues(filter: { project: { id: { eq: \\\"PROJECT_ID\\\" } } }, first: 50) { nodes { id identifier title description state { name } assignee { name } subtasks { nodes { id identifier title } } } pageInfo { hasNextPage endCursor } } }\"
   }" | jq .
@@ -51,7 +51,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d "{
     \"query\": \"query { issues(filter: { team: { id: { eq: \\\"TEAM_ID\\\" } } }, first: 30) { nodes { id identifier title state { name } } } }\"
   }" | jq .
@@ -62,7 +62,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d "{
     \"query\": \"query { issueSearch(search: \\\"search term\\\", first: 20) { nodes { id identifier title state { name } } } }\"
   }" | jq .
@@ -75,7 +75,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "mutation UpdateIssueDescription($id: String!, $description: String) { issueUpdate(id: $id, input: { description: $description }) { success issue { id identifier description } } }",
     "variables": {
@@ -90,7 +90,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "mutation UpdateIssue($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input) { success issue { id identifier title description state { name } } } }",
     "variables": {
@@ -117,7 +117,7 @@ Parent the subtask via `parentId`.
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "mutation CreateSubtask($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title } } }",
     "variables": {
@@ -138,7 +138,7 @@ Same mutation as updating any issue — use `issueUpdate`:
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "mutation($id: String!, $description: String) { issueUpdate(id: $id, input: { description: $description }) { success issue { id identifier description } } }",
     "variables": {
@@ -153,7 +153,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{
     "query": "mutation($id: String!, $stateId: String!) { issueUpdate(id: $id, input: { stateId: $stateId }) { success issue { id identifier state { name } } } }",
     "variables": {
@@ -170,7 +170,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{"query": "query { teams { nodes { id name key states { nodes { id name type } } } } }"}' | jq .
 ```
 
@@ -182,7 +182,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{"query": "query { projects(first: 50) { nodes { id name identifier lead { name } } } }"}' | jq .
 ```
 
@@ -191,7 +191,7 @@ curl -s -X POST https://api.linear.app/graphql \
 ```bash
 curl -s -X POST https://api.linear.app/graphql \
   -H "Content-Type: application/json" \
-  -H "Authorization: $LIN_API_KEY" \
+  -H "Authorization: $LINEAR_API_KEY" \
   -d '{"query": "query { issue(id: \"UUID_OR_IDENTIFIER\") { id identifier title } }"}' | jq .
 ```
 

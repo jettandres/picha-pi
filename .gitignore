@@ -1,3 +1,6 @@
 secrets/
 node_modules/
 package-lock.json
+
+# Skill binaries
+skills/scrape/scrape

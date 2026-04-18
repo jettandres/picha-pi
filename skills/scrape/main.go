@@ -37,8 +37,17 @@ func main() {
 	fmt.Println(markdown)
 }
 
+var client = &http.Client{
+}
+
 func fetchWithHTTP(url string) (string, error) {
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; ScrapeTool/1.0)")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}

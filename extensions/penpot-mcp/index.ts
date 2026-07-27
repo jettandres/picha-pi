@@ -8,6 +8,7 @@ import {
   listTools,
   isInitialized,
   getSessionId,
+  verifyConnection,
   type MCPToolSchema,
 } from "./mcp-client";
 
@@ -26,14 +27,77 @@ export default async function (pi: ExtensionAPI) {
       for (const tool of tools) {
         registerToolFromSchema(pi, tool);
       }
-      registered = true;
-      toolCount = tools.length;
+      const verified = await verifyConnection();
+      if (verified.ok) {
+        registered = true;
+        toolCount = tools.length;
+      } else {
+        registerError = verified.error ?? "Plugin not connected — check your MCP key and Penpot plugin";
+      }
     } else {
       registerError = "Penpot is not running";
     }
   } catch (err) {
     registerError = err instanceof Error ? err.message : String(err);
   }
+
+  // ── reload tool (LLM-callable) ───────────────────────────────────
+
+  pi.registerTool({
+    name: "penpot_reload",
+    label: "Penpot Reload",
+    description:
+      "Re-discover Penpot MCP tools and verify the connection. " +
+      "Use this if tools are returning errors or after reconnecting the Penpot plugin.",
+    parameters: Type.Object({}),
+    async execute() {
+      try {
+        const tools = await listTools();
+        for (const tool of tools) {
+          registerToolFromSchema(pi, tool);
+        }
+        const verified = await verifyConnection();
+        if (verified.ok) {
+          registered = true;
+          toolCount = tools.length;
+          registerError = undefined;
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Penpot MCP: re-discovered ${tools.length} tools, connection verified.`,
+              },
+            ],
+            details: { toolCount: tools.length },
+          };
+        } else {
+          registerError = verified.error ?? "Plugin not connected";
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Penpot MCP reload failed: ${registerError}`,
+              },
+            ],
+            isError: true,
+            details: {},
+          };
+        }
+      } catch (err) {
+        registerError = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Penpot MCP reload failed: ${registerError}`,
+            },
+          ],
+          isError: true,
+          details: {},
+        };
+      }
+    },
+  });
 
   // ── commands ──────────────────────────────────────────────────────
 
@@ -60,19 +124,25 @@ export default async function (pi: ExtensionAPI) {
     description: "Re-discover Penpot MCP tools",
     handler: async (_args, ctx) => {
       try {
-        await initialize();
         const tools = await listTools();
         for (const tool of tools) {
           registerToolFromSchema(pi, tool);
         }
-        registered = true;
-        toolCount = tools.length;
-        registerError = undefined;
-        ctx.ui.setStatus("penpot-mcp", "Penpot MCP: connected");
-        ctx.ui.notify(
-          `Penpot MCP: re-discovered ${tools.length} tools`,
-          "info",
-        );
+        const verified = await verifyConnection();
+        if (verified.ok) {
+          registered = true;
+          toolCount = tools.length;
+          registerError = undefined;
+          ctx.ui.setStatus("penpot-mcp", "Penpot MCP: connected");
+          ctx.ui.notify(
+            `Penpot MCP: re-discovered ${tools.length} tools`,
+            "info",
+          );
+        } else {
+          registerError = verified.error ?? "Plugin not connected";
+          ctx.ui.setStatus("penpot-mcp", "Penpot MCP: key/plugin error");
+          ctx.ui.notify(`Penpot MCP: ${registerError}`, "error");
+        }
       } catch (err) {
         registerError = err instanceof Error ? err.message : String(err);
         ctx.ui.notify(`Penpot MCP reload failed: ${registerError}`, "error");

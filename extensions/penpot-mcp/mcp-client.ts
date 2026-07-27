@@ -238,6 +238,30 @@ function parseSSE(text: string): unknown {
 
 // ── helpers ──────────────────────────────────────────────────────────
 
+// ── connection verification ──────────────────────────────────────────
+
+/**
+ * Smoke-test the connection by executing a trivial code call.
+ * Returns `true` if the plugin is connected and working, `false` otherwise.
+ */
+export async function verifyConnection(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    if (!initialized) await initialize();
+    const result = await callTool("execute_code", { code: "return 1" });
+    // A successful call returns content with a result, not an error text
+    const text = textFrom(result);
+    if (text.includes("Tool execution failed")) {
+      return { ok: false, error: text };
+    }
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /** Extract the primary text from an MCP result */
 export function textFrom(result: MCPResult): string {
   if (!result.content || result.content.length === 0) {
